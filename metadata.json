@@ -1,0 +1,6 @@
+{
+  "name": "TATARI — Job Portal & Digital Store",
+  "description": "Full-featured Indeed-style job search portal and certified digital store with payment receipt verification and administrator approval workflow, ready for Vercel and Supabase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
