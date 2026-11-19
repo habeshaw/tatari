@@ -74,10 +74,22 @@ async function trySupabasePublicFallback<T>(path: string): Promise<T | null> {
     const empType = params.get('employment_type');
     if (empType) qBuilder = qBuilder.eq('employment_type', empType);
 
-    const { data, count, error } = await qBuilder
+    let { data, count, error } = await qBuilder
       .order('is_featured', { ascending: false })
       .order('published_at', { ascending: false })
       .range(from, to);
+
+    // Retry flat select('*') if PostgREST relationship join isn't linked yet
+    if (error) {
+      const flatRes = await supabase
+        .from('jobs')
+        .select('*', { count: 'exact' })
+        .in('status', ['active', 'approved'])
+        .range(from, to);
+      data = flatRes.data;
+      count = flatRes.count;
+      error = flatRes.error;
+    }
 
     if (!error && data) {
       const normalized = data.map((row: Record<string, unknown>) => {
@@ -103,6 +115,31 @@ async function trySupabasePublicFallback<T>(path: string): Promise<T | null> {
         page,
         limit,
         totalPages: Math.max(1, Math.ceil(total / limit)),
+      } as T;
+    }
+  }
+
+  if (path.startsWith('/api/jobs/') && !path.includes('manage')) {
+    const slug = decodeURIComponent(path.replace('/api/jobs/', '').split('?')[0]);
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('slug', slug)
+      .maybeSingle();
+    if (!error && data) {
+      return {
+        job: {
+          ...data,
+          job_origin: data.job_origin === 'external' ? 'external' : 'tatari',
+          published_at: data.published_at || data.created_at || new Date().toISOString(),
+          salary_currency: data.salary_currency || 'ETB',
+          category_name: 'Other',
+          category_slug: 'other',
+          source_name: null,
+          source_website_url: null,
+          is_featured: data.is_featured ? 1 : 0,
+        },
+        jsonLd: null,
       } as T;
     }
   }
