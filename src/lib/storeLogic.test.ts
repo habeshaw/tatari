@@ -4,13 +4,16 @@ import {
   adminApprovePaymentReceipt,
   adminRejectPaymentReceipt,
   buildDownloadableMaterialFile,
+  buildOfficialInvoiceHtml,
+  calculateCommercialPricing,
   canDownloadMaterial,
   createJobPostingWithPayment,
   createMaterialOrderWithPayment,
   filterJobs,
+  isDuplicateTransactionRef,
   isJobPubliclyVisible,
 } from './storeLogic';
-import type { DigitalProduct, JobListing, MaterialOrder, PaymentReceipt } from '../types/domain';
+import type { DigitalProduct, JobListing } from '../types/domain';
 
 const sampleProduct: DigitalProduct = {
   id: 'prod-1',
@@ -53,15 +56,22 @@ const sampleApprovedJob: JobListing = {
   publishedAt: '2026-11-16T09:00:00.000Z',
 };
 
-test('material download stays locked until admin approves payment receipt', () => {
+test('material download stays locked until admin approves payment receipt and generates official invoice', () => {
   const { order, receipt } = createMaterialOrderWithPayment(sampleProduct, {
     payerEmail: 'abebe@tatari.et',
     payerName: 'Abebe Bikila',
     payerPhone: '+251911223344',
     paymentMethod: 'Telebirr',
     transactionRef: 'TB-774411',
+    promoCode: 'TATARI10',
   });
 
+  // 1500 - 10% (150) = 1350 + 15% VAT (203) = 1553 ETB
+  assert.equal(order.subtotalEtb, 1500);
+  assert.equal(order.discountEtb, 150);
+  assert.equal(order.vatEtb, 203);
+  assert.equal(order.amountEtb, 1553);
+  assert.equal(order.promoCode, 'TATARI10');
   assert.equal(order.status, 'pending_approval');
   assert.equal(order.paymentStatus, 'pending_verification');
   assert.equal(canDownloadMaterial(order), false);
@@ -73,6 +83,7 @@ test('material download stays locked until admin approves payment receipt', () =
   );
 
   assert.equal(next.receipts[0].status, 'verified');
+  assert.ok(next.receipts[0].invoiceNumber?.startsWith('INV-'));
   assert.equal(next.orders[0].status, 'approved');
   assert.equal(next.orders[0].paymentStatus, 'verified');
   assert.equal(canDownloadMaterial(next.orders[0]), true);
@@ -80,9 +91,14 @@ test('material download stays locked until admin approves payment receipt', () =
   const file = buildDownloadableMaterialFile(sampleProduct, next.orders[0], next.receipts[0]);
   assert.match(file.filename, /automated-ethiopian-payroll-model-v3\.0\.csv/);
   assert.match(file.content, /TB-774411/);
+
+  const invoice = buildOfficialInvoiceHtml(next.receipts[0]);
+  assert.match(invoice.filename, /^inv-/);
+  assert.match(invoice.content, /TATARI10/);
+  assert.match(invoice.content, /VAT 15%/);
 });
 
-test('employer job posting remains hidden from public job board until admin approves payment receipt', () => {
+test('employer job posting remains hidden from public job board until admin approves payment receipt and sorts featured first', () => {
   const { job, receipt } = createJobPostingWithPayment(
     {
       employerEmail: 'hr@sheger.et',
@@ -100,7 +116,10 @@ test('employer job posting remains hidden from public job board until admin appr
       descriptionEn: 'Lead frontend architecture in React, TypeScript, and PostgreSQL.',
       requirements: ['React', 'TypeScript'],
       benefits: ['Remote stipend'],
-      postingFeeEtb: 500,
+      tierId: 'featured',
+      tierName: 'Featured Sponsored',
+      isFeatured: true,
+      postingFeeEtb: 1200,
     },
     {
       payerEmail: 'hr@sheger.et',
@@ -112,6 +131,8 @@ test('employer job posting remains hidden from public job board until admin appr
   );
 
   assert.equal(job.status, 'pending_approval');
+  assert.equal(job.isFeatured, true);
+  assert.equal(job.postingFeeEtb, 1380); // 1200 + 15% VAT
   assert.equal(isJobPubliclyVisible(job), false);
 
   const beforeApprovalResults = filterJobs([sampleApprovedJob, job], {
@@ -132,20 +153,19 @@ test('employer job posting remains hidden from public job board until admin appr
   );
 
   assert.equal(isJobPubliclyVisible(afterApproval.jobs[1]), true);
-  const afterApprovalResults = filterJobs(afterApproval.jobs, {
-    what: 'React',
-    where: 'Addis',
+  const allApproved = filterJobs(afterApproval.jobs, {
+    what: '',
+    where: '',
     category: 'all',
     jobType: 'all',
     remoteType: 'all',
-    minSalary: 40000,
+    minSalary: 0,
     postedWithinDays: 0,
   });
-  assert.equal(afterApprovalResults.length, 1);
-  assert.equal(afterApprovalResults[0].titleEn, 'Senior React Engineer');
+  assert.equal(allApproved[0].id, job.id);
 });
 
-test('admin rejection keeps download locked and records rejection reason', () => {
+test('admin rejection keeps download locked, records reason, and allows resubmission with same or new ref', () => {
   const { order, receipt } = createMaterialOrderWithPayment(sampleProduct, {
     payerEmail: 'buyer@tatari.et',
     payerName: 'Hanna Bekele',
@@ -153,6 +173,9 @@ test('admin rejection keeps download locked and records rejection reason', () =>
     paymentMethod: 'Telebirr',
     transactionRef: 'TB-0000',
   });
+
+  // Pending receipt blocks duplicate TXN replay
+  assert.equal(isDuplicateTransactionRef([receipt], 'tb-0000'), true);
 
   const rejected = adminRejectPaymentReceipt(
     { jobs: [], orders: [order], receipts: [receipt] },
@@ -165,6 +188,22 @@ test('admin rejection keeps download locked and records rejection reason', () =>
   assert.equal(rejected.orders[0].status, 'rejected');
   assert.equal(rejected.orders[0].rejectionReason, 'Transaction ID not found in Telebirr statement.');
   assert.equal(canDownloadMaterial(rejected.orders[0]), false);
+  // Once rejected, reference is no longer marked active/verified
+  assert.equal(isDuplicateTransactionRef(rejected.receipts, 'TB-0000'), false);
+});
+
+test('commercial pricing calculator validates promo codes and 15% VAT accurately', () => {
+  const valid = calculateCommercialPricing(1000, 'LAUNCH20', true);
+  assert.equal(valid.discountEtb, 200);
+  assert.equal(valid.netBeforeVatEtb, 800);
+  assert.equal(valid.vatEtb, 120);
+  assert.equal(valid.totalEtb, 920);
+  assert.equal(valid.promoError, undefined);
+
+  const invalid = calculateCommercialPricing(1000, 'BADCODE', true);
+  assert.equal(invalid.discountEtb, 0);
+  assert.equal(invalid.totalEtb, 1150);
+  assert.match(invalid.promoError || '', /invalid/i);
 });
 
 test('payment submission rejects invalid or missing transaction references', () => {
@@ -180,3 +219,4 @@ test('payment submission rejects invalid or missing transaction references', () 
     /transaction reference ID/i
   );
 });
+

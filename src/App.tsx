@@ -20,6 +20,10 @@ import { MyActivityView } from './components/MyActivityView';
 import {
   getInitialPlatformState,
   persistPlatformState,
+  pushApplicationToSupabase,
+  pushJobToSupabase,
+  pushOrderToSupabase,
+  pushProductToSupabase,
   pushReceiptAndAuditToSupabase,
   pushUserProfileAndAuditToSupabase,
   syncWithSupabaseIfAvailable,
@@ -41,9 +45,11 @@ import {
   adminApprovePaymentReceipt,
   adminRejectPaymentReceipt,
   buildDownloadableMaterialFile,
+  buildOfficialInvoiceHtml,
   canDownloadMaterial,
   createJobPostingWithPayment,
   createMaterialOrderWithPayment,
+  isDuplicateTransactionRef,
   type JobDraftInput,
   type PaymentSubmissionInput,
 } from './lib/storeLogic';
@@ -56,6 +62,7 @@ import type {
   JobModerationStatus,
   Language,
   MaterialOrder,
+  PaymentReceipt,
   UserRole,
 } from './types/domain';
 
@@ -116,6 +123,10 @@ export default function App() {
         ...prev,
         jobs: res.jobs && res.jobs.length > 0 ? res.jobs : prev.jobs,
         products: res.products && res.products.length > 0 ? res.products : prev.products,
+        orders: res.orders && res.orders.length > 0 ? res.orders : prev.orders,
+        receipts: res.receipts && res.receipts.length > 0 ? res.receipts : prev.receipts,
+        applications:
+          res.applications && res.applications.length > 0 ? res.applications : prev.applications,
       }));
     });
     return () => {
@@ -197,7 +208,13 @@ export default function App() {
     confirmPassword?: string;
   }): string | null => {
     try {
-      const result = registerSeekerAndCreateApplication(state.users, currentUser, payload);
+      const result = registerSeekerAndCreateApplication(
+        state.users,
+        currentUser,
+        payload,
+        new Date().toISOString(),
+        state.applications
+      );
       const nowIso = new Date().toISOString();
       const logsToAdd = [
         {
@@ -220,6 +237,8 @@ export default function App() {
         logsToAdd.unshift(regLog);
         void pushUserProfileAndAuditToSupabase(result.newUser, regLog);
       }
+
+      void pushApplicationToSupabase(result.application);
 
       setState((prev) => ({
         ...prev,
@@ -258,11 +277,13 @@ export default function App() {
   const handleBuyProductWithReceipt = (
     product: DigitalProduct,
     payment: PaymentSubmissionInput
-  ) => {
+  ): string | null => {
     const access = canAccessActivity(currentUser, 'store_checkout');
     if (!access.allowed || !currentUser) {
-      showToast('Please register and sign in before submitting payment.', true);
-      return;
+      return 'Please register and sign in before submitting payment.';
+    }
+    if (isDuplicateTransactionRef(state.receipts, payment.transactionRef)) {
+      return `Transaction reference "${payment.transactionRef.trim()}" has already been submitted. Enter a unique Telebirr or Bank reference ID.`;
     }
 
     try {
@@ -274,7 +295,7 @@ export default function App() {
         id: `log-${Date.now()}`,
         userEmail: currentUser.email,
         actionType: 'SUBMIT_STORE_RECEIPT',
-        details: `Submitted ${payment.paymentMethod} ref ${payment.transactionRef} for "${product.titleEn}".`,
+        details: `Submitted ${payment.paymentMethod} ref ${payment.transactionRef} (ETB ${receipt.amountEtb}) for "${product.titleEn}".`,
         createdAt: new Date().toISOString(),
       };
 
@@ -284,13 +305,15 @@ export default function App() {
         receipts: [receipt, ...prev.receipts],
         logs: [logEntry, ...prev.logs],
       }));
+      void pushOrderToSupabase(order);
       void pushReceiptAndAuditToSupabase(receipt, logEntry);
       setCheckoutProduct(null);
       showToast(
         `Payment receipt ${payment.transactionRef} submitted. Download unlocks once Administrator approves.`
       );
+      return null;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Unable to submit payment.', true);
+      return err instanceof Error ? err.message : 'Unable to submit payment.';
     }
   };
 
@@ -329,38 +352,71 @@ export default function App() {
     showToast(`Downloading ${file.filename}`);
   };
 
+  const handleDownloadInvoice = (receipt: PaymentReceipt) => {
+    if (!currentUser) {
+      openAuthModal({ mode: 'signin', notice: 'Sign in to download verified receipts.' });
+      return;
+    }
+    if (
+      receipt.payerEmail.toLowerCase() !== currentUser.email.toLowerCase() &&
+      currentUser.role !== 'admin'
+    ) {
+      showToast('You are not authorized to download another customer’s invoice.', true);
+      return;
+    }
+    const invoice = buildOfficialInvoiceHtml(receipt);
+    const blob = new Blob([invoice.content], { type: invoice.mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = invoice.filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    showToast(`Official invoice ${invoice.filename} downloaded.`);
+  };
+
   const handleSubmitJobWithPayment = (
     draft: JobDraftInput,
     payment: PaymentSubmissionInput
-  ) => {
+  ): string | null => {
     const access = canAccessActivity(currentUser, 'employer_hub');
     if (!access.allowed || !currentUser) {
-      showToast(access.reason || 'Verified Employer account required.', true);
-      return;
+      return access.reason || 'Verified Employer account required.';
+    }
+    if (isDuplicateTransactionRef(state.receipts, payment.transactionRef)) {
+      return `Transaction reference "${payment.transactionRef.trim()}" has already been submitted. Enter a unique Telebirr or Bank reference ID.`;
     }
 
-    const { job, receipt } = createJobPostingWithPayment(
-      { ...draft, employerEmail: currentUser.email },
-      { ...payment, payerEmail: currentUser.email }
-    );
-    const logEntry = {
-      id: `log-${Date.now()}`,
-      userEmail: currentUser.email,
-      actionType: 'SUBMIT_JOB_RECEIPT',
-      details: `Submitted job "${job.titleEn}" with ${payment.paymentMethod} ref ${payment.transactionRef}.`,
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const { job, receipt } = createJobPostingWithPayment(
+        { ...draft, employerEmail: currentUser.email },
+        { ...payment, payerEmail: currentUser.email }
+      );
+      const logEntry = {
+        id: `log-${Date.now()}`,
+        userEmail: currentUser.email,
+        actionType: 'SUBMIT_JOB_RECEIPT',
+        details: `Submitted ${job.tierName || 'Standard'} job "${job.titleEn}" with ${payment.paymentMethod} ref ${payment.transactionRef} (ETB ${receipt.amountEtb}).`,
+        createdAt: new Date().toISOString(),
+      };
 
-    setState((prev) => ({
-      ...prev,
-      jobs: [job, ...prev.jobs],
-      receipts: [receipt, ...prev.receipts],
-      logs: [logEntry, ...prev.logs],
-    }));
-    void pushReceiptAndAuditToSupabase(receipt, logEntry);
-    showToast(
-      `Job "${job.titleEn}" and receipt ${payment.transactionRef} submitted for Administrator approval.`
-    );
+      setState((prev) => ({
+        ...prev,
+        jobs: [job, ...prev.jobs],
+        receipts: [receipt, ...prev.receipts],
+        logs: [logEntry, ...prev.logs],
+      }));
+      void pushJobToSupabase(job);
+      void pushReceiptAndAuditToSupabase(receipt, logEntry);
+      showToast(
+        `Job "${job.titleEn}" and receipt ${payment.transactionRef} submitted for Administrator approval.`
+      );
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to submit job posting.';
+    }
   };
 
   const handleApproveReceipt = (receiptId: string) => {
@@ -395,6 +451,14 @@ export default function App() {
     if (nextReceipt) {
       void pushReceiptAndAuditToSupabase(nextReceipt, logEntry);
     }
+    const nextJob = updated.jobs.find(
+      (j) => j.id === rcpt.targetId || j.paymentReceiptId === receiptId
+    );
+    if (nextJob) void pushJobToSupabase(nextJob);
+    const nextOrder = updated.orders.find(
+      (o) => o.id === rcpt.targetId || o.paymentReceiptId === receiptId
+    );
+    if (nextOrder) void pushOrderToSupabase(nextOrder);
 
     setState((prev) => ({
       ...prev,
@@ -434,6 +498,17 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
 
+    const nextReceipt = updated.receipts.find((r) => r.id === receiptId);
+    if (nextReceipt) void pushReceiptAndAuditToSupabase(nextReceipt, logEntry);
+    const nextJob = updated.jobs.find(
+      (j) => j.id === rcpt.targetId || j.paymentReceiptId === receiptId
+    );
+    if (nextJob) void pushJobToSupabase(nextJob);
+    const nextOrder = updated.orders.find(
+      (o) => o.id === rcpt.targetId || o.paymentReceiptId === receiptId
+    );
+    if (nextOrder) void pushOrderToSupabase(nextOrder);
+
     setState((prev) => ({
       ...prev,
       jobs: updated.jobs,
@@ -449,6 +524,10 @@ export default function App() {
       showToast('Verified Employer access required.', true);
       return;
     }
+    const existing = state.applications.find((a) => a.id === appId);
+    if (existing) {
+      void pushApplicationToSupabase({ ...existing, status: stage });
+    }
     setState((prev) => ({
       ...prev,
       applications: prev.applications.map((a) =>
@@ -458,10 +537,50 @@ export default function App() {
     showToast(`Candidate stage updated to ${stage}.`);
   };
 
+  const handleEmployerToggleJobPause = (jobId: string) => {
+    if (!canAccessActivity(currentUser, 'employer_hub').allowed || !currentUser) {
+      showToast('Verified Employer access required.', true);
+      return;
+    }
+    const target = state.jobs.find((j) => j.id === jobId);
+    if (!target) return;
+    if (
+      currentUser.role !== 'admin' &&
+      target.employerEmail.toLowerCase() !== currentUser.email.toLowerCase()
+    ) {
+      showToast('You can only pause or reopen your own listings.', true);
+      return;
+    }
+    if (target.status !== 'approved' && target.status !== 'paused') {
+      showToast('Only Administrator-approved jobs can be paused or reopened.', true);
+      return;
+    }
+    const nextStatus: JobModerationStatus = target.status === 'approved' ? 'paused' : 'approved';
+    const nextJob = { ...target, status: nextStatus };
+    void pushJobToSupabase(nextJob);
+    setState((prev) => ({
+      ...prev,
+      jobs: prev.jobs.map((j) => (j.id === jobId ? nextJob : j)),
+    }));
+    showToast(
+      nextStatus === 'paused'
+        ? `"${target.titleEn}" paused from public Job Board.`
+        : `"${target.titleEn}" reopened and live on Job Board.`
+    );
+  };
+
   const handleSetJobStatus = (jobId: string, status: JobModerationStatus) => {
     if (!canAccessActivity(currentUser, 'admin_console').allowed) {
       showToast('Administrator authentication required.', true);
       return;
+    }
+    const existing = state.jobs.find((j) => j.id === jobId);
+    if (existing) {
+      void pushJobToSupabase({
+        ...existing,
+        status,
+        publishedAt: status === 'approved' ? new Date().toISOString() : existing.publishedAt,
+      });
     }
     setState((prev) => ({
       ...prev,
@@ -483,6 +602,10 @@ export default function App() {
       showToast('Administrator authentication required.', true);
       return;
     }
+    const existing = state.products.find((p) => p.id === productId);
+    if (existing) {
+      void pushProductToSupabase({ ...existing, active: !existing.active });
+    }
     setState((prev) => ({
       ...prev,
       products: prev.products.map((p) =>
@@ -502,10 +625,11 @@ export default function App() {
       ...payload,
       id: `prod-${Date.now()}`,
       sellerEmail: currentUser.email,
-      imageUrl: '/src/assets/images/store_kpi_dashboard_1794985400650.jpg',
+      imageUrl: '/images/store_kpi_dashboard_1794985400650.jpg',
       active: true,
       createdAt: new Date().toISOString(),
     };
+    void pushProductToSupabase(newProd);
     setState((prev) => ({
       ...prev,
       products: [newProd, ...prev.products],
@@ -882,6 +1006,7 @@ export default function App() {
             onToggleSaveJob={handleToggleSaveJob}
             onApplyJob={(job) => setApplyModalJob(job)}
             onDownloadMaterial={handleDownloadMaterial}
+            onDownloadInvoice={handleDownloadInvoice}
             onBrowseJobs={() => setActiveView('jobs')}
             onBrowseStore={() => setActiveView('store')}
             onRequireAuth={() =>
@@ -902,6 +1027,8 @@ export default function App() {
             receipts={state.receipts}
             onSubmitJobWithPayment={handleSubmitJobWithPayment}
             onUpdateApplicationStage={handleUpdateApplicationStage}
+            onToggleJobActiveStatus={handleEmployerToggleJobPause}
+            onDownloadInvoice={handleDownloadInvoice}
             onRequireAuth={(opts) => openAuthModal(opts)}
           />
         )}
@@ -925,6 +1052,7 @@ export default function App() {
             onCreateUser={handleAdminCreateUser}
             onUpdateUserRole={handleAdminUpdateUserRole}
             onResetUserPassword={handleAdminResetUserPassword}
+            onDownloadInvoice={handleDownloadInvoice}
             onExportCsv={handleExportCsv}
             onOpenAdminSignIn={() =>
               openAuthModal({

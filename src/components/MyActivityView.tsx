@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  FileText,
   Lock,
   XCircle,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ interface MyActivityViewProps {
   onToggleSaveJob: (jobId: string) => void;
   onApplyJob: (job: JobListing) => void;
   onDownloadMaterial: (product: DigitalProduct, order: MaterialOrder) => void;
+  onDownloadInvoice: (receipt: PaymentReceipt) => void;
   onBrowseJobs: () => void;
   onBrowseStore: () => void;
   onRequireAuth: () => void;
@@ -44,6 +46,7 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
   onToggleSaveJob,
   onApplyJob,
   onDownloadMaterial,
+  onDownloadInvoice,
   onBrowseJobs,
   onBrowseStore,
   onRequireAuth,
@@ -212,16 +215,28 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                       {unlocked && product ? (
-                        <button
-                          type="button"
-                          onClick={() => onDownloadMaterial(product, order)}
-                          className="inline-flex items-center gap-2 rounded-lg bg-[#0F766E] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#0D625C]"
-                        >
-                          <Download className="h-4 w-4" />
-                          Download Material
-                        </button>
+                        <>
+                          {receipt && (
+                            <button
+                              type="button"
+                              onClick={() => onDownloadInvoice(receipt)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              <FileText className="h-4 w-4 text-[#164081]" />
+                              Download Invoice
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onDownloadMaterial(product, order)}
+                            className="inline-flex items-center gap-2 rounded-lg bg-[#0F766E] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#0D625C]"
+                          >
+                            <Download className="h-4 w-4" />
+                            Download Material
+                          </button>
+                        </>
                       ) : (
                         <button
                           type="button"

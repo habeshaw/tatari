@@ -50,6 +50,7 @@ interface AdminConsoleViewProps {
     newPassword: string,
     confirmPassword: string
   ) => string | null;
+  onDownloadInvoice: (receipt: PaymentReceipt) => void;
   onExportCsv: () => void;
   onOpenAdminSignIn: () => void;
 }
@@ -72,6 +73,7 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   onCreateUser,
   onUpdateUserRole,
   onResetUserPassword,
+  onDownloadInvoice,
   onExportCsv,
   onOpenAdminSignIn,
 }) => {
@@ -79,6 +81,7 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   const [userSearch, setUserSearch] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState<'all' | UserRole>('all');
   const [userFilter, setUserFilter] = useState<'all' | AccountStatus>('all');
+  const [logSearch, setLogSearch] = useState('');
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [managedUserEmail, setManagedUserEmail] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<PaymentReceipt | null>(null);
@@ -146,10 +149,22 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
     : null;
 
   const pendingReceipts = receipts.filter((r) => r.status === 'pending_verification');
-  const verifiedTotalEtb = receipts
-    .filter((r) => r.status === 'verified')
+  const verifiedReceipts = receipts.filter((r) => r.status === 'verified');
+  const verifiedTotalEtb = verifiedReceipts.reduce((sum, r) => sum + Number(r.amountEtb || 0), 0);
+  const jobRevenueEtb = verifiedReceipts
+    .filter((r) => r.targetType === 'job_post')
     .reduce((sum, r) => sum + Number(r.amountEtb || 0), 0);
+  const storeRevenueEtb = verifiedReceipts
+    .filter((r) => r.targetType === 'digital_material')
+    .reduce((sum, r) => sum + Number(r.amountEtb || 0), 0);
+  const pendingValueEtb = pendingReceipts.reduce((sum, r) => sum + Number(r.amountEtb || 0), 0);
   const liveJobsCount = jobs.filter((j) => j.status === 'approved').length;
+
+  const filteredLogs = logs.filter((entry) => {
+    const q = logSearch.trim().toLowerCase();
+    if (!q) return true;
+    return `${entry.userEmail} ${entry.actionType} ${entry.details}`.toLowerCase().includes(q);
+  });
 
   const openManageModal = (u: UserProfile) => {
     setManagedUserEmail(u.email);
@@ -226,12 +241,18 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
             <dd className="mt-1 font-mono text-2xl font-bold text-amber-700 tabular-nums">
               {pendingReceipts.length}
             </dd>
+            <div className="mt-0.5 font-mono text-[11px] text-slate-500 tabular-nums">
+              Queue Value: {formatCurrencyEtb(pendingValueEtb)}
+            </div>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <dt className="text-xs font-medium text-slate-500">Verified Revenue</dt>
+            <dt className="text-xs font-medium text-slate-500">Verified Revenue (incl. VAT)</dt>
             <dd className="mt-1 font-mono text-2xl font-bold text-slate-900 tabular-nums">
               {formatCurrencyEtb(verifiedTotalEtb)}
             </dd>
+            <div className="mt-0.5 text-[11px] text-slate-500 tabular-nums">
+              Jobs {formatCurrencyEtb(jobRevenueEtb)} · Store {formatCurrencyEtb(storeRevenueEtb)}
+            </div>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <dt className="text-xs font-medium text-slate-500">Published Jobs</dt>
@@ -333,6 +354,16 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
                   <strong className="font-mono text-slate-900 tabular-nums">
                     {formatCurrencyEtb(rcpt.amountEtb)}
                   </strong>
+                  {rcpt.promoCode && (
+                    <span className="ml-1.5 font-mono text-emerald-700">
+                      (Promo: {rcpt.promoCode})
+                    </span>
+                  )}
+                  {rcpt.invoiceNumber && (
+                    <span className="ml-1.5 font-mono text-slate-500">
+                      · {rcpt.invoiceNumber}
+                    </span>
+                  )}
                 </div>
                 {rcpt.receiptNote && (
                   <p className="text-xs text-slate-500">Note: {rcpt.receiptNote}</p>
@@ -372,10 +403,20 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
                     </button>
                   </>
                 ) : rcpt.status === 'verified' ? (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Verified &amp; {rcpt.targetType === 'job_post' ? 'Published' : 'Unlocked'}
-                  </span>
+                  <>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Verified &amp; {rcpt.targetType === 'job_post' ? 'Published' : 'Unlocked'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onDownloadInvoice(rcpt)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#164081] hover:bg-slate-50"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Invoice
+                    </button>
+                  </>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-700">
                     <XCircle className="h-4 w-4" />
@@ -699,8 +740,21 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600">
-              Payment, User Governance &amp; Security Audit Ledger
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                Payment, User Governance &amp; Security Audit Ledger ({filteredLogs.length})
+              </div>
+              <div className="relative w-full sm:w-64">
+                <Search className="pointer-events-none absolute left-3 top-2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="search"
+                  value={logSearch}
+                  onChange={(e) => setLogSearch(e.target.value)}
+                  placeholder="Filter audit logs..."
+                  aria-label="Filter audit logs"
+                  className="w-full rounded-lg border border-slate-300 py-1.5 pl-8 pr-3 text-xs text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </div>
             </div>
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
@@ -712,7 +766,7 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {logs.map((entry) => (
+                {filteredLogs.map((entry) => (
                   <tr key={entry.id}>
                     <td className="px-5 py-3 font-medium text-slate-900">{entry.userEmail}</td>
                     <td className="px-5 py-3 font-mono text-slate-700">{entry.actionType}</td>

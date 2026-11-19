@@ -2,6 +2,7 @@ import type {
   DigitalProduct,
   JobFilterCriteria,
   JobListing,
+  JobPostingTier,
   JobType,
   MaterialOrder,
   PaymentMethod,
@@ -9,6 +10,101 @@ import type {
   ProductFilterCriteria,
   RemoteType,
 } from '../types/domain';
+
+export interface JobPostingPackage {
+  id: JobPostingTier;
+  name: string;
+  priceEtb: number;
+  durationDays: number;
+  isFeatured: boolean;
+  summary: string;
+}
+
+export const JOB_POSTING_PACKAGES: JobPostingPackage[] = [
+  {
+    id: 'standard',
+    name: 'Standard Listing',
+    priceEtb: 500,
+    durationDays: 30,
+    isFeatured: false,
+    summary: '30-day verified listing on the Job Board with Easy Apply pipeline.',
+  },
+  {
+    id: 'featured',
+    name: 'Featured Sponsored',
+    priceEtb: 1200,
+    durationDays: 45,
+    isFeatured: true,
+    summary: '45-day Sponsored priority placement above standard search results.',
+  },
+  {
+    id: 'enterprise',
+    name: 'Hiring Pro Priority',
+    priceEtb: 2500,
+    durationDays: 60,
+    isFeatured: true,
+    summary: '60-day top Sponsored placement + bilingual highlight & executive reach.',
+  },
+];
+
+export const ETHIOPIA_VAT_RATE = 0.15;
+
+export const PROMO_DISCOUNTS: Record<string, number> = {
+  TATARI10: 0.1,
+  CORP15: 0.15,
+  LAUNCH20: 0.2,
+};
+
+export interface CommercialPricingBreakdown {
+  subtotalEtb: number;
+  discountEtb: number;
+  netBeforeVatEtb: number;
+  vatEtb: number;
+  totalEtb: number;
+  appliedPromoCode?: string;
+  promoPercent: number;
+  promoError?: string;
+}
+
+export function calculateCommercialPricing(
+  baseEtb: number,
+  promoCode?: string,
+  applyVat: boolean = true
+): CommercialPricingBreakdown {
+  const subtotalEtb = Math.max(0, Math.round(Number(baseEtb || 0)));
+  const cleanCode = (promoCode || '').trim().toUpperCase();
+  const promoRate = cleanCode ? PROMO_DISCOUNTS[cleanCode] || 0 : 0;
+
+  const discountEtb = promoRate > 0 ? Math.round(subtotalEtb * promoRate) : 0;
+  const netBeforeVatEtb = Math.max(0, subtotalEtb - discountEtb);
+  const vatEtb = applyVat ? Math.round(netBeforeVatEtb * ETHIOPIA_VAT_RATE) : 0;
+  const totalEtb = netBeforeVatEtb + vatEtb;
+
+  return {
+    subtotalEtb,
+    discountEtb,
+    netBeforeVatEtb,
+    vatEtb,
+    totalEtb,
+    appliedPromoCode: promoRate > 0 ? cleanCode : undefined,
+    promoPercent: Math.round(promoRate * 100),
+    promoError:
+      cleanCode && promoRate === 0
+        ? `Promo code "${cleanCode}" is invalid. Try TATARI10 or LAUNCH20.`
+        : undefined,
+  };
+}
+
+export function isDuplicateTransactionRef(
+  receipts: PaymentReceipt[],
+  transactionRef: string
+): boolean {
+  const normalized = transactionRef.trim().toUpperCase();
+  if (!normalized) return false;
+  return receipts.some(
+    (r) => r.status !== 'rejected' && r.transactionRef.trim().toUpperCase() === normalized
+  );
+}
 
 export function isJobPubliclyVisible(job: JobListing): boolean {
   return job.status === 'approved';
@@ -43,7 +139,7 @@ export function filterJobs(
   const what = criteria.what.trim().toLowerCase();
   const where = criteria.where.trim().toLowerCase();
 
-  return jobs.filter((job) => {
+  const filtered = jobs.filter((job) => {
     if (!includeUnpublished && !isJobPubliclyVisible(job)) {
       return false;
     }
@@ -98,6 +194,15 @@ export function filterJobs(
 
     return true;
   });
+
+  // Sponsored / Featured jobs stay prioritized cleanly above standard roles, newest first
+  return [...filtered].sort((a, b) => {
+    const featDiff = Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured));
+    if (featDiff !== 0) return featDiff;
+    const bTime = new Date(b.publishedAt || b.createdAt).getTime() || 0;
+    const aTime = new Date(a.publishedAt || a.createdAt).getTime() || 0;
+    return bTime - aTime;
+  });
 }
 
 export function filterProducts(
@@ -135,6 +240,8 @@ export interface PaymentSubmissionInput {
   payerPhone: string;
   paymentMethod: PaymentMethod;
   transactionRef: string;
+  promoCode?: string;
+  applyVat?: boolean;
   receiptNote?: string;
   receiptImageData?: string;
 }
@@ -156,6 +263,9 @@ export interface JobDraftInput {
   descriptionEn: string;
   requirements: string[];
   benefits: string[];
+  tierId?: JobPostingTier;
+  tierName?: string;
+  isFeatured?: boolean;
   postingFeeEtb: number;
 }
 
@@ -202,6 +312,13 @@ export function createJobPostingWithPayment(
   const uid = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
   const jobId = `job-${uid}`;
   const receiptId = `rcpt-${uid}`;
+  const pricing = calculateCommercialPricing(
+    draft.postingFeeEtb,
+    payment.promoCode,
+    payment.applyVat ?? true
+  );
+
+  const pkg = JOB_POSTING_PACKAGES.find((p) => p.id === (draft.tierId || 'standard'));
 
   const salaryDisplay =
     draft.salaryMax > draft.salaryMin
@@ -229,7 +346,10 @@ export function createJobPostingWithPayment(
     requirements: draft.requirements.filter((r) => r.trim().length > 0),
     benefits: draft.benefits.filter((b) => b.trim().length > 0),
     easyApply: true,
-    postingFeeEtb: draft.postingFeeEtb,
+    tierId: draft.tierId || pkg?.id || 'standard',
+    tierName: draft.tierName || pkg?.name || 'Standard Listing',
+    isFeatured: draft.isFeatured ?? pkg?.isFeatured ?? false,
+    postingFeeEtb: pricing.totalEtb,
     paymentReceiptId: receiptId,
     status: 'pending_approval',
     createdAt: nowIso,
@@ -245,7 +365,11 @@ export function createJobPostingWithPayment(
     payerPhone: payment.payerPhone.trim(),
     paymentMethod: payment.paymentMethod,
     transactionRef: payment.transactionRef.trim(),
-    amountEtb: draft.postingFeeEtb,
+    subtotalEtb: pricing.subtotalEtb,
+    discountEtb: pricing.discountEtb,
+    vatEtb: pricing.vatEtb,
+    promoCode: pricing.appliedPromoCode,
+    amountEtb: pricing.totalEtb,
     receiptNote: payment.receiptNote?.trim(),
     receiptImageData: payment.receiptImageData,
     status: 'pending_verification',
@@ -266,6 +390,11 @@ export function createMaterialOrderWithPayment(
   const uid = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
   const orderId = `ord-${uid}`;
   const receiptId = `rcpt-${uid}`;
+  const pricing = calculateCommercialPricing(
+    product.priceEtb,
+    payment.promoCode,
+    payment.applyVat ?? true
+  );
 
   const order: MaterialOrder = {
     id: orderId,
@@ -273,7 +402,11 @@ export function createMaterialOrderWithPayment(
     productTitle: product.titleEn,
     buyerEmail: payment.payerEmail.trim().toLowerCase(),
     buyerName: payment.payerName.trim(),
-    amountEtb: product.priceEtb,
+    subtotalEtb: pricing.subtotalEtb,
+    discountEtb: pricing.discountEtb,
+    vatEtb: pricing.vatEtb,
+    promoCode: pricing.appliedPromoCode,
+    amountEtb: pricing.totalEtb,
     paymentReceiptId: receiptId,
     paymentStatus: 'pending_verification',
     status: 'pending_approval',
@@ -290,7 +423,11 @@ export function createMaterialOrderWithPayment(
     payerPhone: payment.payerPhone.trim(),
     paymentMethod: payment.paymentMethod,
     transactionRef: payment.transactionRef.trim(),
-    amountEtb: product.priceEtb,
+    subtotalEtb: pricing.subtotalEtb,
+    discountEtb: pricing.discountEtb,
+    vatEtb: pricing.vatEtb,
+    promoCode: pricing.appliedPromoCode,
+    amountEtb: pricing.totalEtb,
     receiptNote: payment.receiptNote?.trim(),
     receiptImageData: payment.receiptImageData,
     status: 'pending_verification',
@@ -315,10 +452,19 @@ export function adminApprovePaymentReceipt(
   const targetReceipt = state.receipts.find((r) => r.id === receiptId);
   if (!targetReceipt) return state;
 
+  const year = nowIso.slice(0, 4) || '2026';
+  const suffix = targetReceipt.transactionRef
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toUpperCase()
+    .slice(-6)
+    .padStart(6, '0');
+  const invoiceNumber = targetReceipt.invoiceNumber || `INV-${year}-${suffix}`;
+
   const receipts = state.receipts.map((r) =>
     r.id === receiptId
       ? {
           ...r,
+          invoiceNumber,
           status: 'verified' as const,
           reviewedBy: adminEmail,
           reviewedAt: nowIso,
@@ -347,6 +493,7 @@ export function adminApprovePaymentReceipt(
           o.id === targetReceipt.targetId || o.paymentReceiptId === receiptId
             ? {
                 ...o,
+                invoiceNumber,
                 paymentStatus: 'verified' as const,
                 status: 'approved' as const,
                 approvedAt: nowIso,
@@ -433,8 +580,10 @@ export function buildDownloadableMaterialFile(
       `"Product","${product.titleEn.replace(/"/g, '""')}"`,
       `"Version","${product.version}"`,
       `"Order ID","${order.id}"`,
+      `"Invoice Number","${order.invoiceNumber || receipt?.invoiceNumber || 'VERIFIED'}"`,
       `"Licensed Buyer","${order.buyerName} (${order.buyerEmail})"`,
       `"Verified Payment Ref","${receipt?.transactionRef ?? 'ADMIN-VERIFIED'}"`,
+      `"Total Paid (incl. VAT)","ETB ${order.amountEtb}"`,
       `"Approved At","${order.approvedAt ?? new Date().toISOString()}"`,
       ``,
       `"=== SAMPLE ETHIOPIAN PAYROLL & KPI WORKSHEET MODEL ==="`,
@@ -469,7 +618,7 @@ export function buildDownloadableMaterialFile(
   <h1>${product.titleEn}</h1>
   <div class="meta">
     <strong>License Holder:</strong> ${order.buyerName} (${order.buyerEmail})<br/>
-    <strong>Order ID:</strong> ${order.id} &nbsp;|&nbsp; <strong>Payment Ref:</strong> ${receipt?.transactionRef ?? 'VERIFIED'}<br/>
+    <strong>Order ID:</strong> ${order.id} &nbsp;|&nbsp; <strong>Invoice:</strong> ${order.invoiceNumber || receipt?.invoiceNumber || 'VERIFIED'} &nbsp;|&nbsp; <strong>Payment Ref:</strong> ${receipt?.transactionRef ?? 'VERIFIED'}<br/>
     <strong>Format &amp; Version:</strong> ${product.fileFormat} (${product.version}) &nbsp;|&nbsp; <strong>Status:</strong> Administrator Approved
   </div>
   <h2>Overview</h2>
@@ -493,3 +642,106 @@ export function buildDownloadableMaterialFile(
     content: htmlDoc,
   };
 }
+
+export function buildOfficialInvoiceHtml(
+  receipt: PaymentReceipt,
+  customerLabel?: string
+): { filename: string; mimeType: string; content: string } {
+  const invoiceNo =
+    receipt.invoiceNumber ||
+    `INV-${receipt.createdAt.slice(0, 4)}-${receipt.transactionRef.replace(/[^A-Za-z0-9]/g, '').slice(-6)}`;
+  const subtotal = receipt.subtotalEtb ?? receipt.amountEtb;
+  const discount = receipt.discountEtb ?? 0;
+  const vat = receipt.vatEtb ?? 0;
+  const issuedDate = (receipt.reviewedAt || receipt.createdAt).slice(0, 10);
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>${invoiceNo} — TATARI Official Payment Receipt</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 760px; margin: 36px auto; color: #0f172a; padding: 0 24px; }
+  .header { display: flex; justify-content: space-between; border-bottom: 2px solid #164081; padding-bottom: 16px; }
+  .brand { font-size: 22px; font-weight: 800; color: #10243B; }
+  .sub { font-size: 12px; color: #475569; margin-top: 4px; }
+  .badge { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; height: fit-content; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 24px 0; font-size: 13px; }
+  .box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+  th, td { border-bottom: 1px solid #e2e8f0; padding: 10px 8px; text-align: left; }
+  th { background: #f1f5f9; font-size: 11px; text-transform: uppercase; color: #475569; }
+  .right { text-align: right; font-family: ui-monospace, monospace; }
+  .total-row td { font-weight: 800; font-size: 15px; border-top: 2px solid #0f172a; }
+  .footer { margin-top: 32px; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="brand">TATARI CONSULTING PLC</div>
+      <div class="sub">TIN: 0011223344 · Bole Sub-City, Addis Ababa, Ethiopia · support@tatari.et</div>
+    </div>
+    <div class="badge">VERIFIED PAYMENT RECEIPT</div>
+  </div>
+
+  <div class="grid">
+    <div class="box">
+      <strong>Billed To:</strong><br/>
+      ${customerLabel || receipt.payerName}<br/>
+      ${receipt.payerEmail}<br/>
+      ${receipt.payerPhone}
+    </div>
+    <div class="box">
+      <strong>Invoice No:</strong> ${invoiceNo}<br/>
+      <strong>Issued Date:</strong> ${issuedDate}<br/>
+      <strong>Method:</strong> ${receipt.paymentMethod}<br/>
+      <strong>Bank/TXN Ref:</strong> ${receipt.transactionRef}
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Description</th>
+        <th>Category</th>
+        <th class="right">Amount (ETB)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>${receipt.targetTitle}</td>
+        <td>${receipt.targetType === 'job_post' ? 'Job Vacancy Listing' : 'Licensed Digital Material'}</td>
+        <td class="right">${subtotal.toLocaleString('en-US')}</td>
+      </tr>
+      ${
+        discount > 0
+          ? `<tr><td>Promotional Discount (${receipt.promoCode || 'PROMO'})</td><td>Promo Applied</td><td class="right">-${discount.toLocaleString('en-US')}</td></tr>`
+          : ''
+      }
+      ${
+        vat > 0
+          ? `<tr><td>Value Added Tax (VAT 15%)</td><td>Statutory Tax</td><td class="right">${vat.toLocaleString('en-US')}</td></tr>`
+          : ''
+      }
+      <tr class="total-row">
+        <td colspan="2">Total Paid &amp; Verified (ETB)</td>
+        <td class="right">ETB ${receipt.amountEtb.toLocaleString('en-US')}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    Approved by: ${receipt.reviewedBy || 'admin@tatari.et'} · Verified at: ${receipt.reviewedAt || issuedDate}.<br/>
+    This is an electronically verified commercial receipt generated by TATARI Job Portal &amp; Digital Store.
+  </div>
+</body>
+</html>`;
+
+  return {
+    filename: `${invoiceNo.toLowerCase()}.html`,
+    mimeType: 'text/html;charset=utf-8;',
+    content: html,
+  };
+}
+

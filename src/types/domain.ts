@@ -10,6 +10,8 @@ export type JobType = 'Full-time' | 'Part-time' | 'Contract' | 'Internship';
 
 export type RemoteType = 'On-site' | 'Hybrid' | 'Remote';
 
+export type JobPostingTier = 'standard' | 'featured' | 'enterprise';
+
 export type JobModerationStatus = 'pending_approval' | 'approved' | 'rejected' | 'paused';
 
 export type ApplicationStage =
@@ -61,6 +63,9 @@ export interface JobListing {
   requirements: string[];
   benefits: string[];
   easyApply: boolean;
+  tierId?: JobPostingTier;
+  tierName?: string;
+  isFeatured?: boolean;
   postingFeeEtb: number;
   paymentReceiptId?: string;
   status: JobModerationStatus;
@@ -108,7 +113,12 @@ export interface MaterialOrder {
   productTitle: string;
   buyerEmail: string;
   buyerName: string;
+  subtotalEtb?: number;
+  discountEtb?: number;
+  vatEtb?: number;
+  promoCode?: string;
   amountEtb: number;
+  invoiceNumber?: string;
   paymentReceiptId: string;
   paymentStatus: PaymentVerificationStatus;
   status: OrderApprovalStatus;
@@ -127,7 +137,12 @@ export interface PaymentReceipt {
   payerPhone: string;
   paymentMethod: PaymentMethod;
   transactionRef: string;
+  subtotalEtb?: number;
+  discountEtb?: number;
+  vatEtb?: number;
+  promoCode?: string;
   amountEtb: number;
+  invoiceNumber?: string;
   receiptNote?: string;
   receiptImageData?: string;
   status: PaymentVerificationStatus;

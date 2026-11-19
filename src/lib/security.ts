@@ -206,7 +206,8 @@ export function registerSeekerAndCreateApplication(
   existingUsers: UserProfile[],
   currentUser: UserProfile | null,
   input: SeekerApplyRegistrationInput,
-  nowIso: string = new Date().toISOString()
+  nowIso: string = new Date().toISOString(),
+  existingApplications: JobApplication[] = []
 ): {
   application: JobApplication;
   newUser: UserProfile | null;
@@ -228,6 +229,15 @@ export function registerSeekerAndCreateApplication(
   }
   if (!cleanResume) {
     throw new Error('Please provide your CV / Resume link.');
+  }
+
+  const targetEmail = currentUser ? currentUser.email.toLowerCase() : cleanEmail;
+  if (
+    existingApplications.some(
+      (a) => a.jobId === input.job.id && a.applicantEmail.toLowerCase() === targetEmail
+    )
+  ) {
+    throw new Error('You have already submitted an application for this vacancy.');
   }
 
   if (currentUser) {

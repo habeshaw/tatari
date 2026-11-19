@@ -79,6 +79,9 @@ ALTER TABLE public.career_jobs ADD COLUMN IF NOT EXISTS posting_fee_etb NUMERIC 
 ALTER TABLE public.career_jobs ADD COLUMN IF NOT EXISTS payment_receipt_id TEXT;
 ALTER TABLE public.career_jobs ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 ALTER TABLE public.career_jobs ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;
+ALTER TABLE public.career_jobs ADD COLUMN IF NOT EXISTS tier_id TEXT DEFAULT 'standard';
+ALTER TABLE public.career_jobs ADD COLUMN IF NOT EXISTS tier_name TEXT DEFAULT 'Standard Listing';
+ALTER TABLE public.career_jobs ADD COLUMN IF NOT EXISTS is_featured BOOLEAN DEFAULT false;
 
 -- 3. Job Applications Pipeline
 CREATE TABLE IF NOT EXISTS public.job_applications (
@@ -135,7 +138,12 @@ CREATE TABLE IF NOT EXISTS public.material_orders (
     product_title TEXT NOT NULL,
     buyer_email TEXT NOT NULL,
     buyer_name TEXT NOT NULL,
+    subtotal_etb NUMERIC DEFAULT 0,
+    discount_etb NUMERIC DEFAULT 0,
+    vat_etb NUMERIC DEFAULT 0,
+    promo_code TEXT,
     amount_etb NUMERIC NOT NULL,
+    invoice_number TEXT,
     payment_receipt_id TEXT,
     payment_status TEXT NOT NULL DEFAULT 'pending_verification' CHECK (payment_status IN ('pending_verification', 'verified', 'rejected')),
     status TEXT NOT NULL DEFAULT 'pending_approval' CHECK (status IN ('pending_approval', 'approved', 'rejected')),
@@ -143,6 +151,12 @@ CREATE TABLE IF NOT EXISTS public.material_orders (
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
     approved_at TIMESTAMPTZ
 );
+
+ALTER TABLE public.material_orders ADD COLUMN IF NOT EXISTS subtotal_etb NUMERIC DEFAULT 0;
+ALTER TABLE public.material_orders ADD COLUMN IF NOT EXISTS discount_etb NUMERIC DEFAULT 0;
+ALTER TABLE public.material_orders ADD COLUMN IF NOT EXISTS vat_etb NUMERIC DEFAULT 0;
+ALTER TABLE public.material_orders ADD COLUMN IF NOT EXISTS promo_code TEXT;
+ALTER TABLE public.material_orders ADD COLUMN IF NOT EXISTS invoice_number TEXT;
 
 -- 6. Unified Payment Receipts Ledger (Job Posting Fees & Digital Store Purchases)
 CREATE TABLE IF NOT EXISTS public.payment_receipts (
@@ -155,7 +169,12 @@ CREATE TABLE IF NOT EXISTS public.payment_receipts (
     payer_phone TEXT NOT NULL,
     payment_method TEXT NOT NULL CHECK (payment_method IN ('Telebirr', 'CBE Bank Transfer', 'CBE Birr', 'AwashBirr')),
     transaction_ref TEXT NOT NULL,
+    subtotal_etb NUMERIC DEFAULT 0,
+    discount_etb NUMERIC DEFAULT 0,
+    vat_etb NUMERIC DEFAULT 0,
+    promo_code TEXT,
     amount_etb NUMERIC NOT NULL,
+    invoice_number TEXT,
     receipt_note TEXT,
     receipt_image_data TEXT,
     status TEXT NOT NULL DEFAULT 'pending_verification' CHECK (status IN ('pending_verification', 'verified', 'rejected')),
@@ -164,6 +183,12 @@ CREATE TABLE IF NOT EXISTS public.payment_receipts (
     rejection_reason TEXT,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+ALTER TABLE public.payment_receipts ADD COLUMN IF NOT EXISTS subtotal_etb NUMERIC DEFAULT 0;
+ALTER TABLE public.payment_receipts ADD COLUMN IF NOT EXISTS discount_etb NUMERIC DEFAULT 0;
+ALTER TABLE public.payment_receipts ADD COLUMN IF NOT EXISTS vat_etb NUMERIC DEFAULT 0;
+ALTER TABLE public.payment_receipts ADD COLUMN IF NOT EXISTS promo_code TEXT;
+ALTER TABLE public.payment_receipts ADD COLUMN IF NOT EXISTS invoice_number TEXT;
 
 -- 7. Audit Activity Logs
 CREATE TABLE IF NOT EXISTS public.activity_logs (

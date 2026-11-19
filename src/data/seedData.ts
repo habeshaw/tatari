@@ -154,7 +154,10 @@ export const SEED_JOBS: JobListing[] = [
       'Flexible hours and paid annual leave',
     ],
     easyApply: true,
-    postingFeeEtb: 500,
+    tierId: 'featured',
+    tierName: 'Featured Sponsored',
+    isFeatured: true,
+    postingFeeEtb: 1200,
     status: 'approved',
     createdAt: '2026-11-17T06:00:00.000Z',
     publishedAt: '2026-11-17T07:00:00.000Z',
@@ -307,7 +310,7 @@ export const SEED_PRODUCTS: DigitalProduct[] = [
     fileFormat: 'XLSX / CSV',
     fileSize: '3.2 MB',
     version: 'v4.2',
-    imageUrl: '/src/assets/images/store_payroll_model_1794985399578.jpg',
+    imageUrl: '/images/store_payroll_model_1794985399578.jpg',
     descriptionEn:
       'Production-tested Excel & Power Query payroll engine pre-configured with Ethiopian progressive income tax brackets, 7% employee / 11% employer pension, overtime multipliers, and one-click printable bilingual payslips.',
     descriptionAm:
@@ -331,7 +334,7 @@ export const SEED_PRODUCTS: DigitalProduct[] = [
     fileFormat: 'PBIX / XLSX',
     fileSize: '6.8 MB',
     version: 'v3.0',
-    imageUrl: '/src/assets/images/store_kpi_dashboard_1794985400650.jpg',
+    imageUrl: '/images/store_kpi_dashboard_1794985400650.jpg',
     descriptionEn:
       'Plug-and-play executive KPI dashboard for Ethiopian SMEs, microfinance branches, and retail chains. Includes revenue vs budget variance, cash runway, branch leaderboard, and HR headcount turnover visuals.',
     descriptionAm:
@@ -355,7 +358,7 @@ export const SEED_PRODUCTS: DigitalProduct[] = [
     fileFormat: 'DOCX / PDF',
     fileSize: '4.1 MB',
     version: 'v2.5',
-    imageUrl: '/src/assets/images/store_hr_policy_pack_1794985400046.jpg',
+    imageUrl: '/images/store_hr_policy_pack_1794985400046.jpg',
     descriptionEn:
       'Comprehensive bilingual HR manual and legal contract kit aligned with Ethiopian Labor Proclamation No. 1156/2019. Includes indefinite & definite employment contracts, probation evaluations, leave policy, and disciplinary procedures.',
     descriptionAm:
@@ -379,7 +382,7 @@ export const SEED_PRODUCTS: DigitalProduct[] = [
     fileFormat: 'DOCX / PDF',
     fileSize: '1.9 MB',
     version: 'v2.0',
-    imageUrl: '/src/assets/images/store_career_cv_kit_1794985400612.jpg',
+    imageUrl: '/images/store_career_cv_kit_1794985400612.jpg',
     descriptionEn:
       'ATS-optimized resume templates, cover letter frameworks for NGOs and corporate employers in Ethiopia, salary negotiation scripts, and an interview preparation scorecard.',
     descriptionAm:
@@ -402,7 +405,7 @@ export const SEED_PRODUCTS: DigitalProduct[] = [
     fileFormat: 'XLSX / PDF',
     fileSize: '2.9 MB',
     version: 'v1.8',
-    imageUrl: '/src/assets/images/store_payroll_model_1794985399578.jpg',
+    imageUrl: '/images/store_payroll_model_1794985399578.jpg',
     descriptionEn:
       'Bank-ready 36-month P&L, Balance Sheet, Cashflow Statement, and Break-Even sensitivity workbook tailored for Ethiopian commercial bank loan applications and investor pitches.',
     includedFiles: [
@@ -455,7 +458,11 @@ export const SEED_RECEIPTS: PaymentReceipt[] = [
     payerPhone: '+251911223344',
     paymentMethod: 'Telebirr',
     transactionRef: 'TB-884120',
-    amountEtb: 500,
+    subtotalEtb: 500,
+    discountEtb: 0,
+    vatEtb: 75,
+    amountEtb: 575,
+    invoiceNumber: 'INV-2026-884120',
     status: 'verified',
     reviewedBy: 'admin@tatari.et',
     reviewedAt: '2026-11-16T08:00:00.000Z',
@@ -470,7 +477,10 @@ export const SEED_ORDERS: MaterialOrder[] = [
     productTitle: 'Executive KPI & Financial Analytics Dashboard Suite',
     buyerEmail: 'abebe@tatari.et',
     buyerName: 'Abebe Bikila',
-    amountEtb: 2500,
+    subtotalEtb: 2500,
+    discountEtb: 0,
+    vatEtb: 375,
+    amountEtb: 2875,
     paymentReceiptId: 'rcpt-pending-ord-301',
     paymentStatus: 'pending_verification',
     status: 'pending_approval',

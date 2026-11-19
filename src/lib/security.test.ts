@@ -188,3 +188,43 @@ test('self-service password rotation validates current password and strength', (
   assert.ok(authenticateCredentials(rotated, 'abebe@tatari.et', 'AbebeNew#2026').user);
 });
 
+test('duplicate job applications from same applicant to the same job are prevented', () => {
+  const seeker = SEED_USERS.find((u) => u.email === 'abebe@tatari.et')!;
+  const existingApps = [
+    {
+      id: 'app-existing',
+      jobId: SEED_JOBS[0].id,
+      jobTitle: SEED_JOBS[0].titleEn,
+      companyName: SEED_JOBS[0].companyName,
+      applicantName: seeker.fullName,
+      applicantEmail: seeker.email,
+      phone: '+251911556677',
+      resumeUrl: 'https://drive.google.com/abebe',
+      coverNote: '',
+      yearsExperience: '3-5 years',
+      status: 'Submitted' as const,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+  assert.throws(
+    () =>
+      registerSeekerAndCreateApplication(
+        SEED_USERS,
+        seeker,
+        {
+          job: SEED_JOBS[0],
+          applicantName: seeker.fullName,
+          applicantEmail: seeker.email,
+          phone: '+251911556677',
+          resumeUrl: 'https://drive.google.com/abebe',
+          yearsExperience: '3-5 years',
+          coverNote: '',
+        },
+        new Date().toISOString(),
+        existingApps
+      ),
+    /already submitted/i
+  );
+});
+
+

@@ -4,8 +4,12 @@ import {
   validateEmailFormat,
   validatePasswordStrength,
 } from '../lib/security';
-import { formatCurrencyEtb, validatePaymentSubmission } from '../lib/storeLogic';
-import type { PaymentSubmissionInput } from '../lib/storeLogic';
+import {
+  calculateCommercialPricing,
+  formatCurrencyEtb,
+  validatePaymentSubmission,
+  type PaymentSubmissionInput,
+} from '../lib/storeLogic';
 import type {
   DigitalProduct,
   JobListing,
@@ -301,7 +305,7 @@ interface PaymentCheckoutModalProps {
   product: DigitalProduct;
   currentUser: UserProfile;
   onClose: () => void;
-  onSubmitPayment: (product: DigitalProduct, payment: PaymentSubmissionInput) => void;
+  onSubmitPayment: (product: DigitalProduct, payment: PaymentSubmissionInput) => string | null;
 }
 
 export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
@@ -314,9 +318,17 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
   const [payerName, setPayerName] = useState(currentUser.fullName);
   const [payerPhone, setPayerPhone] = useState(currentUser.phone || '+251911');
   const [transactionRef, setTransactionRef] = useState('');
+  const [promoInput, setPromoInput] = useState('');
+  const [appliedPromoInput, setAppliedPromoInput] = useState('');
   const [receiptNote, setReceiptNote] = useState('');
   const [receiptImageData, setReceiptImageData] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+
+  const pricing = calculateCommercialPricing(product.priceEtb, appliedPromoInput, true);
+
+  const handleApplyPromo = () => {
+    setAppliedPromoInput(promoInput.trim().toUpperCase());
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -332,12 +344,15 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     const payload: PaymentSubmissionInput = {
       payerEmail: currentUser.email.toLowerCase(),
       payerName: payerName.trim(),
       payerPhone: payerPhone.trim(),
       paymentMethod,
       transactionRef: transactionRef.trim(),
+      promoCode: pricing.appliedPromoCode,
+      applyVat: true,
       receiptNote: receiptNote.trim(),
       receiptImageData,
     };
@@ -346,7 +361,10 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
       setError(err);
       return;
     }
-    onSubmitPayment(product, payload);
+    const submitErr = onSubmitPayment(product, payload);
+    if (submitErr) {
+      setError(submitErr);
+    }
   };
 
   return (
@@ -364,7 +382,7 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
               {product.titleEn}
             </h2>
             <p className="mt-1 font-mono text-sm font-bold text-slate-900 tabular-nums">
-              Amount Due: {formatCurrencyEtb(product.priceEtb)}
+              Total Due (incl. 15% VAT): {formatCurrencyEtb(pricing.totalEtb)}
             </p>
           </div>
           <button
@@ -378,15 +396,65 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          {/* Commercial Promo Code & VAT Breakdown */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={promoInput}
+                onChange={(e) => setPromoInput(e.target.value)}
+                placeholder="Promo code (e.g. TATARI10)"
+                aria-label="Promo code"
+                className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs uppercase text-slate-900 focus:border-[#164081] focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleApplyPromo}
+                className="rounded-lg border border-[#164081] bg-white px-3 py-1.5 text-xs font-semibold text-[#164081] hover:bg-[#F0F5FF]"
+              >
+                Apply Promo
+              </button>
+            </div>
+            {pricing.promoError && (
+              <p className="mt-1.5 font-medium text-rose-700">{pricing.promoError}</p>
+            )}
+            {pricing.appliedPromoCode && (
+              <p className="mt-1.5 font-semibold text-emerald-700">
+                Promo {pricing.appliedPromoCode} applied ({pricing.promoPercent}% off)
+              </p>
+            )}
+
+            <dl className="mt-3 space-y-1 border-t border-slate-200 pt-2.5 text-slate-700 tabular-nums">
+              <div className="flex justify-between">
+                <dt>Base License Price</dt>
+                <dd className="font-mono">{formatCurrencyEtb(pricing.subtotalEtb)}</dd>
+              </div>
+              {pricing.discountEtb > 0 && (
+                <div className="flex justify-between text-emerald-700">
+                  <dt>Discount ({pricing.appliedPromoCode})</dt>
+                  <dd className="font-mono">-{formatCurrencyEtb(pricing.discountEtb)}</dd>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <dt>VAT (15%)</dt>
+                <dd className="font-mono">{formatCurrencyEtb(pricing.vatEtb)}</dd>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-1.5 font-bold text-slate-900">
+                <dt>Total Payable</dt>
+                <dd className="font-mono">{formatCurrencyEtb(pricing.totalEtb)}</dd>
+              </div>
+            </dl>
+          </div>
+
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-700">
             <div className="font-bold text-slate-900">Merchant Payment Instructions</div>
             <p className="mt-1">
               1. Send{' '}
-              <strong className="font-mono">{formatCurrencyEtb(product.priceEtb)}</strong> via{' '}
+              <strong className="font-mono">{formatCurrencyEtb(pricing.totalEtb)}</strong> via{' '}
               <strong>Telebirr (0911-00-44-22)</strong> or{' '}
               <strong>CBE (1000284910293 — TATARI Consulting)</strong>.<br />
-              2. Enter your transaction reference below.<br />
-              3. Download unlocks automatically for{' '}
+              2. Enter your unique transaction reference below.<br />
+              3. Download &amp; official VAT invoice unlock for{' '}
               <strong className="font-mono">{currentUser.email}</strong> once the Administrator
               approves receipt of payment.
             </p>
