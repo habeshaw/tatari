@@ -68,6 +68,12 @@ export const DigitalStoreView: React.FC<DigitalStoreViewProps> = ({
               {t.storeHeroTitle}
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-slate-600">{t.storeHeroSubtitle}</p>
+            {!currentUserEmail && (
+              <p className="mt-2 text-xs font-semibold text-[#164081]">
+                Account registration &amp; sign-in are required before purchasing or downloading
+                digital materials.
+              </p>
+            )}
           </div>
 
           {/* Segmented Category Filter & Search */}

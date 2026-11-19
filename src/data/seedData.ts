@@ -1,3 +1,4 @@
+import { hashUserPassword } from '../lib/security';
 import type {
   AuditLogEntry,
   DigitalProduct,
@@ -13,9 +14,11 @@ export const SEED_USERS: UserProfile[] = [
     email: 'admin@tatari.et',
     fullName: 'TATARI System Administrator',
     companyName: 'TATARI Consulting PLC',
+    tinNumber: '0011223344',
     phone: '+251911000001',
     role: 'admin',
     status: 'approved',
+    passwordHash: hashUserPassword('admin@tatari.et', 'TatariAdmin#2026'),
     createdAt: '2026-10-01T08:00:00.000Z',
   },
   {
@@ -26,6 +29,7 @@ export const SEED_USERS: UserProfile[] = [
     phone: '+251911223344',
     role: 'employer',
     status: 'approved',
+    passwordHash: hashUserPassword('hr@addistech.et', 'Employer@2026'),
     createdAt: '2026-10-12T09:30:00.000Z',
   },
   {
@@ -34,6 +38,7 @@ export const SEED_USERS: UserProfile[] = [
     phone: '+251911556677',
     role: 'seeker',
     status: 'approved',
+    passwordHash: hashUserPassword('abebe@tatari.et', 'Seeker@2026'),
     createdAt: '2026-10-20T11:00:00.000Z',
   },
 ];

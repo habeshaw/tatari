@@ -30,6 +30,7 @@ interface MyActivityViewProps {
   onDownloadMaterial: (product: DigitalProduct, order: MaterialOrder) => void;
   onBrowseJobs: () => void;
   onBrowseStore: () => void;
+  onRequireAuth: () => void;
 }
 
 export const MyActivityView: React.FC<MyActivityViewProps> = ({
@@ -45,8 +46,43 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
   onDownloadMaterial,
   onBrowseJobs,
   onBrowseStore,
+  onRequireAuth,
 }) => {
   const [tab, setTab] = useState<'orders' | 'applications' | 'saved'>('orders');
+
+  if (!currentUserEmail) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-xs">
+          <Lock className="mx-auto h-10 w-10 text-[#164081]" />
+          <h1 className="mt-3 font-display text-xl font-bold text-slate-900">
+            Registration Required for Saved Jobs &amp; Orders
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Sign in or register an account to save jobs, manage digital store downloads, and track
+            your submitted applications. Job seekers are also registered automatically when applying
+            for any specific job.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={onRequireAuth}
+              className="rounded-lg bg-[#164081] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#102E61]"
+            >
+              Sign In / Register
+            </button>
+            <button
+              type="button"
+              onClick={onBrowseJobs}
+              className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Browse Jobs &amp; Apply
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const myOrders = orders.filter(
     (o) => o.buyerEmail.toLowerCase() === currentUserEmail.toLowerCase()

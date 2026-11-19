@@ -19,14 +19,14 @@ import type {
   UserProfile,
 } from '../types/domain';
 
-const STORAGE_KEY = 'tatari_platform_state_v11';
+const STORAGE_KEY = 'tatari_platform_state_v12';
 
 export interface PlatformState {
   users: UserProfile[];
   currentUserEmail: string;
   language: Language;
   jobs: JobListing[];
-  savedJobIds: string[];
+  savedJobIdsByUser: Record<string, string[]>;
   applications: JobApplication[];
   products: DigitalProduct[];
   orders: MaterialOrder[];
@@ -39,12 +39,20 @@ export function getInitialPlatformState(): PlatformState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<PlatformState>;
+      const users = (parsed.users?.length ? parsed.users : SEED_USERS).map((u) => {
+        if (u.passwordHash) return u;
+        const seeded = SEED_USERS.find((s) => s.email.toLowerCase() === u.email.toLowerCase());
+        return seeded ? { ...u, passwordHash: seeded.passwordHash } : u;
+      });
       return {
-        users: parsed.users?.length ? parsed.users : SEED_USERS,
-        currentUserEmail: parsed.currentUserEmail || 'abebe@tatari.et',
+        users,
+        currentUserEmail: parsed.currentUserEmail || '',
         language: parsed.language === 'am' ? 'am' : 'en',
         jobs: parsed.jobs?.length ? parsed.jobs : SEED_JOBS,
-        savedJobIds: Array.isArray(parsed.savedJobIds) ? parsed.savedJobIds : ['job-103'],
+        savedJobIdsByUser:
+          parsed.savedJobIdsByUser && typeof parsed.savedJobIdsByUser === 'object'
+            ? parsed.savedJobIdsByUser
+            : { 'abebe@tatari.et': ['job-103'] },
         applications: Array.isArray(parsed.applications) ? parsed.applications : SEED_APPLICATIONS,
         products: parsed.products?.length ? parsed.products : SEED_PRODUCTS,
         orders: Array.isArray(parsed.orders) ? parsed.orders : SEED_ORDERS,
@@ -58,10 +66,10 @@ export function getInitialPlatformState(): PlatformState {
 
   return {
     users: SEED_USERS,
-    currentUserEmail: 'abebe@tatari.et',
+    currentUserEmail: '',
     language: 'en',
     jobs: SEED_JOBS,
-    savedJobIds: ['job-103'],
+    savedJobIdsByUser: { 'abebe@tatari.et': ['job-103'] },
     applications: SEED_APPLICATIONS,
     products: SEED_PRODUCTS,
     orders: SEED_ORDERS,
@@ -204,6 +212,40 @@ export async function pushReceiptAndAuditToSupabase(
       reviewed_at: receipt.reviewedAt ?? null,
       rejection_reason: receipt.rejectionReason ?? null,
     });
+
+    await client.from('activity_logs').insert({
+      id: log.id,
+      user_email: log.userEmail,
+      action_type: log.actionType,
+      details: log.details,
+    });
+  } catch {
+    // Non-blocking sync; local state remains authoritative if schema isn't provisioned yet
+  }
+}
+
+export async function pushUserProfileAndAuditToSupabase(
+  user: UserProfile,
+  log: AuditLogEntry
+): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    await client.from('profiles').upsert(
+      {
+        email: user.email,
+        full_name: user.fullName,
+        company_name: user.companyName ?? null,
+        tin_number: user.tinNumber ?? null,
+        phone: user.phone ?? null,
+        role: user.role,
+        status: user.status,
+        password_hash: user.passwordHash,
+        last_login_at: user.lastLoginAt ?? null,
+      },
+      { onConflict: 'email' }
+    );
 
     await client.from('activity_logs').insert({
       id: log.id,

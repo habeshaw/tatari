@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Clock, Plus, Upload, Users, XCircle } from 'lucide-react';
+import {
+  Building2,
+  CheckCircle2,
+  Clock,
+  Lock,
+  Plus,
+  ShieldAlert,
+  Upload,
+  Users,
+  XCircle,
+} from 'lucide-react';
 import { formatCurrencyEtb, validateJobDraft } from '../lib/storeLogic';
 import type {
   ApplicationStage,
@@ -20,7 +30,7 @@ interface EmployerHubViewProps {
   receipts: PaymentReceipt[];
   onSubmitJobWithPayment: (draft: JobDraftInput, payment: PaymentSubmissionInput) => void;
   onUpdateApplicationStage: (appId: string, stage: ApplicationStage) => void;
-  onRequireAuth: () => void;
+  onRequireAuth: (options?: { mode?: 'signin' | 'signup'; role?: 'seeker' | 'employer'; notice?: string }) => void;
 }
 
 const JOB_POSTING_FEE_ETB = 500;
@@ -61,11 +71,114 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
   const [receiptNote, setReceiptNote] = useState('');
   const [receiptImageData, setReceiptImageData] = useState<string | undefined>(undefined);
 
+  // Strict Access Gate 1: Must be registered & signed in
+  if (!currentUser) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-xs">
+          <Lock className="mx-auto h-10 w-10 text-[#164081]" />
+          <h1 className="mt-3 font-display text-xl font-bold text-slate-900">
+            Employer Registration Required
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Only registered and Administrator-verified Employers can post job vacancies or review
+            applicant pipelines. Job seekers can browse and apply freely on the Job Board without
+            pre-registration.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                onRequireAuth({
+                  mode: 'signup',
+                  role: 'employer',
+                  notice:
+                    'Register your Employer organization with your Business TIN to post vacancies.',
+                })
+              }
+              className="rounded-lg bg-[#164081] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#102E61]"
+            >
+              Register Employer Account
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onRequireAuth({
+                  mode: 'signin',
+                  notice: 'Sign in with your verified Employer credentials.',
+                })
+              }
+              className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Employer Sign In
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Strict Access Gate 2: Job Seekers cannot access Employer Hub
+  if (currentUser.role === 'seeker') {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-xs">
+          <ShieldAlert className="mx-auto h-10 w-10 text-amber-600" />
+          <h1 className="mt-3 font-display text-xl font-bold text-slate-900">
+            Employer Account Required
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            You are currently signed in as a <strong>Job Seeker</strong> ({currentUser.email}). To
+            post jobs or manage applicants, register or sign in with an Employer organization account.
+          </p>
+          <button
+            type="button"
+            onClick={() =>
+              onRequireAuth({
+                mode: 'signup',
+                role: 'employer',
+                notice: 'Sign out or register a separate Employer account with Company TIN.',
+              })
+            }
+            className="mt-6 rounded-lg bg-[#164081] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#102E61]"
+          >
+            Switch / Register Employer Account
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Strict Access Gate 3: Employer must be verified/approved by Admin
+  if (currentUser.role === 'employer' && currentUser.status !== 'approved') {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <div className="rounded-xl border border-amber-200 bg-white p-8 shadow-xs">
+          <Clock className="mx-auto h-10 w-10 text-amber-600" />
+          <h1 className="mt-3 font-display text-xl font-bold text-slate-900">
+            Employer Verification Pending
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Your organization profile for{' '}
+            <strong>{currentUser.companyName || currentUser.fullName}</strong> (TIN:{' '}
+            <span className="font-mono font-semibold">{currentUser.tinNumber || 'Provided'}</span>)
+            is awaiting Administrator verification. Once approved, you can post jobs and manage
+            candidates.
+          </p>
+          <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-semibold text-amber-800">
+            <Building2 className="h-4 w-4" />
+            Account Status: {currentUser.status.toUpperCase()}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const buildDraft = (): JobDraftInput => ({
-    employerEmail: currentUser?.email || 'hr@addistech.et',
+    employerEmail: currentUser.email.toLowerCase(),
     titleEn,
     titleAm: titleAm || undefined,
-    companyName: companyName || currentUser?.companyName || '',
+    companyName: companyName || currentUser.companyName || '',
     location,
     remoteType,
     category,
@@ -90,10 +203,6 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
   const handleContinueToPayment = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    if (!currentUser) {
-      onRequireAuth();
-      return;
-    }
     const err = validateJobDraft(buildDraft());
     if (err) {
       setFormError(err);
@@ -118,10 +227,6 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
   const handleFinalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    if (!currentUser) {
-      onRequireAuth();
-      return;
-    }
     try {
       onSubmitJobWithPayment(buildDraft(), {
         payerEmail: currentUser.email,
@@ -132,7 +237,6 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
         receiptNote,
         receiptImageData,
       });
-      // Reset wizard and switch to employer listings tab
       setTitleEn('');
       setTitleAm('');
       setDescriptionEn('');
@@ -150,7 +254,6 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
 
   const employerJobs = jobs.filter(
     (j) =>
-      !currentUser ||
       currentUser.role === 'admin' ||
       j.employerEmail.toLowerCase() === currentUser.email.toLowerCase()
   );

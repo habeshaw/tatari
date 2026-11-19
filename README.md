@@ -10,6 +10,19 @@ A full-featured Indeed-style job board and certified digital material storefront
 - **Administrator Governance Console**: Unified Payment Receipt Verification Queue (approve or reject with reason), Job Postings Moderation, Digital Store Catalog Manager, and User & Audit Ledger with CSV export.
 - **Bilingual Support**: Instant English (`EN`) and Amharic (`አማ`) interface switching.
 
+## Role-Based Security & Registration Policy
+- **Job Seekers**: Visitors can browse and search all approved job vacancies without pre-registering. When applying for a specific job, the Job Seeker registers their account simultaneously inside the application flow (or signs in if already registered).
+- **Registered Activity Gate**: Bookmarking jobs, accessing `Saved & Orders`, purchasing/downloading Digital Store materials, posting vacancies, and moderating platform content require an authenticated registered account.
+- **Employer Verification**: Employers must register with Company Name and Business TIN / License Number and remain `pending` until verified and approved by the Administrator.
+- **Administrator Governance**: Protected by SHA-256 salted credential verification and 5-attempt failed-login lockout protection.
+
+### Default Seeded Evaluation Accounts
+| Role | Email | Password |
+| :--- | :--- | :--- |
+| Administrator | `admin@tatari.et` | `TatariAdmin#2026` |
+| Approved Employer | `hr@addistech.et` | `Employer@2026` |
+| Job Seeker | `abebe@tatari.et` | `Seeker@2026` |
+
 ## Deployment Guide (GitHub + Supabase + Vercel)
 
 ### 1. Supabase Setup

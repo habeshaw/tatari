@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { Lock, Upload, X } from 'lucide-react';
+import { LogOut, Lock, ShieldCheck, Upload, UserCheck, X } from 'lucide-react';
+import {
+  validateEmailFormat,
+  validatePasswordStrength,
+} from '../lib/security';
 import { formatCurrencyEtb, validatePaymentSubmission } from '../lib/storeLogic';
 import type { PaymentSubmissionInput } from '../lib/storeLogic';
 import type {
@@ -7,14 +11,14 @@ import type {
   JobListing,
   PaymentMethod,
   UserProfile,
-  UserRole,
 } from '../types/domain';
 
-/* 1. Job Easy Apply Modal */
+/* 1. Job Easy Apply Modal (Registers Job Seeker automatically while applying if unauthenticated) */
 interface JobApplyModalProps {
   job: JobListing;
   currentUser: UserProfile | null;
   onClose: () => void;
+  onOpenSignIn: () => void;
   onSubmit: (payload: {
     job: JobListing;
     applicantName: string;
@@ -23,13 +27,16 @@ interface JobApplyModalProps {
     resumeUrl: string;
     yearsExperience: string;
     coverNote: string;
-  }) => void;
+    password?: string;
+    confirmPassword?: string;
+  }) => string | null;
 }
 
 export const JobApplyModal: React.FC<JobApplyModalProps> = ({
   job,
   currentUser,
   onClose,
+  onOpenSignIn,
   onSubmit,
 }) => {
   const [applicantName, setApplicantName] = useState(currentUser?.fullName || '');
@@ -38,15 +45,21 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
   const [resumeUrl, setResumeUrl] = useState('https://drive.google.com/my-cv-2026');
   const [yearsExperience, setYearsExperience] = useState('3-5 years');
   const [coverNote, setCoverNote] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  const isGuest = !currentUser;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
     if (applicantName.trim().length < 2) {
       setError('Full name is required.');
       return;
     }
-    if (!applicantEmail.includes('@')) {
+    if (!validateEmailFormat(applicantEmail)) {
       setError('A valid email address is required.');
       return;
     }
@@ -58,7 +71,20 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
       setError('Please provide your CV / Resume link.');
       return;
     }
-    onSubmit({
+
+    if (isGuest) {
+      const pwdErr = validatePasswordStrength(password);
+      if (pwdErr) {
+        setError(pwdErr);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match.');
+        return;
+      }
+    }
+
+    const submitErr = onSubmit({
       job,
       applicantName: applicantName.trim(),
       applicantEmail: applicantEmail.trim().toLowerCase(),
@@ -66,7 +92,13 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
       resumeUrl: resumeUrl.trim(),
       yearsExperience,
       coverNote: coverNote.trim(),
+      password: isGuest ? password : undefined,
+      confirmPassword: isGuest ? confirmPassword : undefined,
     });
+
+    if (submitErr) {
+      setError(submitErr);
+    }
   };
 
   return (
@@ -76,10 +108,12 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
       aria-modal="true"
       aria-label={`Apply for ${job.titleEn}`}
     >
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
-            <p className="text-xs font-semibold text-[#164081]">Easy Apply</p>
+            <p className="text-xs font-semibold text-[#164081]">
+              {isGuest ? 'Easy Apply & Instant Job Seeker Registration' : 'Easy Apply'}
+            </p>
             <h2 className="mt-0.5 font-display text-lg font-bold text-slate-900">
               {job.titleEn}
             </h2>
@@ -97,9 +131,43 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          {isGuest ? (
+            <div className="rounded-lg border border-blue-200 bg-[#F0F5FF] p-3 text-xs text-slate-700">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-[#10243B]">
+                  No pre-registration needed to browse jobs
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenSignIn();
+                  }}
+                  className="font-semibold text-[#164081] hover:underline whitespace-nowrap"
+                >
+                  Already registered? Sign in
+                </button>
+              </div>
+              <p className="mt-1 text-slate-600">
+                Submitting this application registers your Job Seeker account automatically so you
+                can track interview updates.
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+              <UserCheck className="h-4 w-4 text-emerald-700 shrink-0" />
+              <span>
+                Applying as <strong>{currentUser.fullName}</strong> ({currentUser.email})
+              </span>
+            </div>
+          )}
+
           {error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800">
+            <div
+              role="alert"
+              className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800"
+            >
               {error}
             </div>
           )}
@@ -121,9 +189,12 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
               <input
                 type="email"
                 required
+                readOnly={!isGuest}
                 value={applicantEmail}
                 onChange={(e) => setApplicantEmail(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                className={`mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none ${
+                  !isGuest ? 'bg-slate-100 text-slate-600' : ''
+                }`}
               />
             </label>
 
@@ -138,6 +209,35 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
               />
             </label>
           </div>
+
+          {isGuest && (
+            <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-slate-50 p-3.5 sm:grid-cols-2">
+              <label className="block text-xs font-semibold text-slate-700">
+                Create Account Password *
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Min 8 chars + number"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Confirm Password *
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter password"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+            </div>
+          )}
 
           <label className="block text-xs font-semibold text-slate-700">
             CV / Resume Link (Google Drive, LinkedIn, or Portfolio) *
@@ -187,7 +287,7 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
               type="submit"
               className="rounded-lg bg-[#164081] px-5 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
             >
-              Submit Application
+              {isGuest ? 'Register & Submit Application' : 'Submit Application'}
             </button>
           </div>
         </form>
@@ -199,7 +299,7 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
 /* 2. Digital Store Payment Checkout Modal */
 interface PaymentCheckoutModalProps {
   product: DigitalProduct;
-  currentUser: UserProfile | null;
+  currentUser: UserProfile;
   onClose: () => void;
   onSubmitPayment: (product: DigitalProduct, payment: PaymentSubmissionInput) => void;
 }
@@ -211,9 +311,8 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
   onSubmitPayment,
 }) => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Telebirr');
-  const [payerName, setPayerName] = useState(currentUser?.fullName || '');
-  const [payerEmail, setPayerEmail] = useState(currentUser?.email || '');
-  const [payerPhone, setPayerPhone] = useState(currentUser?.phone || '+251911');
+  const [payerName, setPayerName] = useState(currentUser.fullName);
+  const [payerPhone, setPayerPhone] = useState(currentUser.phone || '+251911');
   const [transactionRef, setTransactionRef] = useState('');
   const [receiptNote, setReceiptNote] = useState('');
   const [receiptImageData, setReceiptImageData] = useState<string | undefined>(undefined);
@@ -234,7 +333,7 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const payload: PaymentSubmissionInput = {
-      payerEmail: payerEmail.trim().toLowerCase(),
+      payerEmail: currentUser.email.toLowerCase(),
       payerName: payerName.trim(),
       payerPhone: payerPhone.trim(),
       paymentMethod,
@@ -287,7 +386,9 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
               <strong>Telebirr (0911-00-44-22)</strong> or{' '}
               <strong>CBE (1000284910293 — TATARI Consulting)</strong>.<br />
               2. Enter your transaction reference below.<br />
-              3. Download unlocks automatically once the Administrator approves receipt of payment.
+              3. Download unlocks automatically for{' '}
+              <strong className="font-mono">{currentUser.email}</strong> once the Administrator
+              approves receipt of payment.
             </p>
           </div>
 
@@ -339,13 +440,12 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
             </label>
 
             <label className="block text-xs font-semibold text-slate-700">
-              Your Email Address *
+              Registered Buyer Email
               <input
                 type="email"
-                required
-                value={payerEmail}
-                onChange={(e) => setPayerEmail(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                readOnly
+                value={currentUser.email}
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600"
               />
             </label>
           </div>
@@ -408,75 +508,82 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
   );
 };
 
-/* 3. Auth Sign In / Self-Register Modal */
+/* 3. Secure Auth Sign In / Verified Role Registration Modal (No Passwordless Bypass) */
 interface AuthModalProps {
   currentUser: UserProfile | null;
-  users: UserProfile[];
+  initialMode?: 'signin' | 'signup';
+  initialRole?: 'seeker' | 'employer';
+  contextNotice?: string | null;
+  lockoutSecondsRemaining?: number;
   onClose: () => void;
-  onSignIn: (email: string) => void;
+  onSignIn: (email: string, password: string) => string | null;
+  onSignOut: () => void;
   onRegister: (user: {
     email: string;
     fullName: string;
     companyName?: string;
-    phone?: string;
-    role: UserRole;
-  }) => void;
+    tinNumber?: string;
+    phone: string;
+    role: 'seeker' | 'employer';
+    password: string;
+    confirmPassword: string;
+  }) => string | null;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   currentUser,
-  users,
+  initialMode = 'signin',
+  initialRole = 'seeker',
+  contextNotice,
+  lockoutSecondsRemaining = 0,
   onClose,
   onSignIn,
+  onSignOut,
   onRegister,
 }) => {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail] = useState(currentUser?.email || 'abebe@tatari.et');
+  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [tinNumber, setTinNumber] = useState('');
   const [phone, setPhone] = useState('+251911');
-  const [role, setRole] = useState<UserRole>('seeker');
+  const [role, setRole] = useState<'seeker' | 'employer'>(initialRole);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail.includes('@')) {
-      setError('Please enter a valid email address.');
-      return;
-    }
 
     if (mode === 'signin') {
-      const exists = users.find((u) => u.email.toLowerCase() === cleanEmail);
-      if (!exists) {
-        setError('Account not found. Switch to Register to create a new account.');
+      if (lockoutSecondsRemaining > 0) {
+        setError(`Too many failed attempts. Try again in ${lockoutSecondsRemaining}s.`);
         return;
       }
-      if (exists.status === 'suspended') {
-        setError('This account has been suspended by the Administrator.');
+      const err = onSignIn(email, password);
+      if (err) {
+        setError(err);
         return;
       }
-      onSignIn(exists.email);
       onClose();
       return;
     }
 
-    if (cleanEmail === 'admin@tatari.et') {
-      setError('admin@tatari.et is reserved for the system administrator.');
-      return;
-    }
-    if (fullName.trim().length < 2) {
-      setError('Full name is required.');
-      return;
-    }
-    onRegister({
-      email: cleanEmail,
-      fullName: fullName.trim(),
-      companyName: companyName.trim() || undefined,
-      phone: phone.trim() || undefined,
+    const err = onRegister({
+      email,
+      fullName,
+      companyName,
+      tinNumber,
+      phone,
       role,
+      password,
+      confirmPassword,
     });
+    if (err) {
+      setError(err);
+      return;
+    }
     onClose();
   };
 
@@ -485,19 +592,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="Account sign in and registration"
+      aria-label="Secure account sign in and registration"
     >
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+      <div className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">
-              {mode === 'signin' ? 'Sign In to TATARI' : 'Create TATARI Account'}
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-[#164081]">
+              <ShieldCheck className="h-4 w-4" />
+              <span>TATARI Secure Access</span>
+            </div>
+            <h2 className="mt-0.5 font-display text-lg font-bold text-slate-900">
+              {mode === 'signin' ? 'Sign In to Your Account' : 'Register Verified Account'}
             </h2>
-            <p className="text-xs text-slate-500">
-              {currentUser
-                ? `Active session: ${currentUser.email} (${currentUser.role.toUpperCase()})`
-                : 'Choose an account or register below.'}
-            </p>
           </div>
           <button
             type="button"
@@ -509,15 +615,114 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
         </div>
 
+        {/* Active Session Box with Sign Out */}
+        {currentUser && (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="font-bold text-slate-900">{currentUser.fullName}</div>
+                <div className="text-slate-600">
+                  {currentUser.email} ·{' '}
+                  <span className="font-semibold uppercase text-[#164081]">
+                    {currentUser.role}
+                  </span>{' '}
+                  · Status:{' '}
+                  <span
+                    className={`font-semibold ${
+                      currentUser.status === 'approved' ? 'text-emerald-700' : 'text-amber-700'
+                    }`}
+                  >
+                    {currentUser.status}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onSignOut();
+                  onClose();
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Sign Out
+              </button>
+            </div>
+          </div>
+        )}
+
+        {contextNotice && (
+          <div className="mt-4 rounded-lg border border-blue-200 bg-[#F0F5FF] px-3.5 py-2.5 text-xs text-[#10243B]">
+            {contextNotice}
+          </div>
+        )}
+
+        <div
+          role="tablist"
+          aria-label="Authentication mode"
+          className="mt-4 grid grid-cols-2 gap-1.5 rounded-lg bg-slate-100 p-1"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'signin'}
+            onClick={() => {
+              setMode('signin');
+              setError(null);
+            }}
+            className={`rounded-md py-1.5 text-xs font-semibold transition-colors ${
+              mode === 'signin' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+            }`}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'signup'}
+            onClick={() => {
+              setMode('signup');
+              setError(null);
+            }}
+            className={`rounded-md py-1.5 text-xs font-semibold transition-colors ${
+              mode === 'signup' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+            }`}
+          >
+            Register
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
           {error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800">
+            <div
+              role="alert"
+              className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800"
+            >
               {error}
             </div>
           )}
 
           {mode === 'signup' && (
             <>
+              <label className="block text-xs font-semibold text-slate-700">
+                Account Type *
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as 'seeker' | 'employer')}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                >
+                  <option value="seeker">Job Seeker &amp; Digital Store Buyer</option>
+                  <option value="employer">Employer / Hiring Organization</option>
+                </select>
+              </label>
+
+              {role === 'employer' && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                  Employer accounts require Company Name &amp; TIN verification by the Administrator
+                  before posting jobs or accessing candidate pipelines.
+                </div>
+              )}
+
               <label className="block text-xs font-semibold text-slate-700">
                 Full Name *
                 <input
@@ -529,34 +734,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 />
               </label>
 
-              <label className="block text-xs font-semibold text-slate-700">
-                Account Role
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
-                >
-                  <option value="seeker">Job Seeker &amp; Digital Store Buyer</option>
-                  <option value="employer">Employer / Hiring Organization</option>
-                </select>
-              </label>
-
               {role === 'employer' && (
-                <label className="block text-xs font-semibold text-slate-700">
-                  Company Name
-                  <input
-                    type="text"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
-                  />
-                </label>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Company Name *
+                    <input
+                      type="text"
+                      required
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      placeholder="e.g. EthioCorp PLC"
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Business TIN / License *
+                    <input
+                      type="text"
+                      required
+                      value={tinNumber}
+                      onChange={(e) => setTinNumber(e.target.value)}
+                      placeholder="e.g. 0045678912"
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                    />
+                  </label>
+                </div>
               )}
 
               <label className="block text-xs font-semibold text-slate-700">
-                Phone Number
+                Phone Number *
                 <input
                   type="text"
+                  required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
@@ -572,68 +781,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@company.et"
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
             />
           </label>
 
+          <label className="block text-xs font-semibold text-slate-700">
+            Password *
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={mode === 'signup' ? 'Min 8 characters + letter & number' : 'Enter password'}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+            />
+          </label>
+
+          {mode === 'signup' && (
+            <label className="block text-xs font-semibold text-slate-700">
+              Confirm Password *
+              <input
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter password"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+              />
+            </label>
+          )}
+
           <button
             type="submit"
-            className="w-full rounded-lg bg-[#164081] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#102E61]"
+            disabled={mode === 'signin' && lockoutSecondsRemaining > 0}
+            className="w-full rounded-lg bg-[#164081] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#102E61] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {mode === 'signin' ? 'Sign In' : 'Create Account'}
+            {mode === 'signin' ? 'Sign In Securely' : 'Create Verified Account'}
           </button>
         </form>
-
-        {/* Quick Demo Role Switcher inside Auth Modal */}
-        <div className="mt-5 border-t border-slate-200 pt-4">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Quick Switch Demo Accounts
-          </div>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                onSignIn('abebe@tatari.et');
-                onClose();
-              }}
-              className="rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Job Seeker
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onSignIn('hr@addistech.et');
-                onClose();
-              }}
-              className="rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Employer
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onSignIn('admin@tatari.et');
-                onClose();
-              }}
-              className="rounded-lg border border-[#164081] bg-[#F0F5FF] px-2.5 py-2 text-xs font-semibold text-[#164081] hover:bg-[#E5EEFD]"
-            >
-              Admin
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 text-center">
-          <button
-            type="button"
-            onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-            className="text-xs font-semibold text-[#164081] hover:underline"
-          >
-            {mode === 'signin'
-              ? 'New to TATARI? Register an account'
-              : 'Already have an account? Sign In'}
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -682,7 +868,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onAdd
     >
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl space-y-4"
+        className="w-full max-w-lg space-y-4 rounded-xl bg-white p-6 shadow-xl"
       >
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <h2 className="font-display text-lg font-bold text-slate-900">

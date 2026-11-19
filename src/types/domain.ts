@@ -34,6 +34,8 @@ export interface UserProfile {
   phone?: string;
   role: UserRole;
   status: AccountStatus;
+  passwordHash: string;
+  lastLoginAt?: string;
   createdAt: string;
 }
 

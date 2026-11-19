@@ -20,9 +20,17 @@ import {
   getInitialPlatformState,
   persistPlatformState,
   pushReceiptAndAuditToSupabase,
+  pushUserProfileAndAuditToSupabase,
   syncWithSupabaseIfAvailable,
   type PlatformState,
 } from './lib/repository';
+import {
+  adminUpdateAccountStatus,
+  authenticateCredentials,
+  canAccessActivity,
+  registerSeekerAndCreateApplication,
+  registerVerifiedRoleAccount,
+} from './lib/security';
 import {
   adminApprovePaymentReceipt,
   adminRejectPaymentReceipt,
@@ -38,13 +46,18 @@ import type {
   ApplicationStage,
   AppView,
   DigitalProduct,
-  JobApplication,
   JobListing,
   JobModerationStatus,
   Language,
   MaterialOrder,
-  UserRole,
 } from './types/domain';
+
+interface AuthModalConfig {
+  open: boolean;
+  mode: 'signin' | 'signup';
+  role: 'seeker' | 'employer';
+  notice: string | null;
+}
 
 export default function App() {
   const [state, setState] = useState<PlatformState>(() => getInitialPlatformState());
@@ -52,8 +65,19 @@ export default function App() {
 
   const [applyModalJob, setApplyModalJob] = useState<JobListing | null>(null);
   const [checkoutProduct, setCheckoutProduct] = useState<DigitalProduct | null>(null);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [pendingProductAfterAuth, setPendingProductAfterAuth] = useState<DigitalProduct | null>(
+    null
+  );
+  const [authConfig, setAuthConfig] = useState<AuthModalConfig>({
+    open: false,
+    mode: 'signin',
+    role: 'seeker',
+    notice: null,
+  });
   const [addProductModalOpen, setAddProductModalOpen] = useState(false);
+  const [failedLoginCount, setFailedLoginCount] = useState(0);
+  const [lockoutUntilMs, setLockoutUntilMs] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
 
   const showToast = (message: string, isError: boolean = false) => {
@@ -65,6 +89,12 @@ export default function App() {
     const timer = window.setTimeout(() => setToast(null), 4200);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (lockoutUntilMs <= Date.now()) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [lockoutUntilMs]);
 
   useEffect(() => {
     persistPlatformState(state);
@@ -86,24 +116,64 @@ export default function App() {
   }, []);
 
   const currentUser =
-    state.users.find((u) => u.email.toLowerCase() === state.currentUserEmail.toLowerCase()) ||
-    null;
+    state.currentUserEmail
+      ? state.users.find(
+          (u) => u.email.toLowerCase() === state.currentUserEmail.toLowerCase()
+        ) || null
+      : null;
 
-  const pendingApprovalCount = state.receipts.filter(
-    (r) => r.status === 'pending_verification'
-  ).length;
+  const currentSavedJobIds = currentUser
+    ? state.savedJobIdsByUser[currentUser.email.toLowerCase()] || []
+    : [];
+
+  const pendingApprovalCount =
+    currentUser?.role === 'admin'
+      ? state.receipts.filter((r) => r.status === 'pending_verification').length
+      : 0;
+
+  const lockoutSecondsRemaining = Math.max(0, Math.ceil((lockoutUntilMs - nowMs) / 1000));
+
+  const openAuthModal = (options?: {
+    mode?: 'signin' | 'signup';
+    role?: 'seeker' | 'employer';
+    notice?: string;
+  }) => {
+    setAuthConfig({
+      open: true,
+      mode: options?.mode || 'signin',
+      role: options?.role || 'seeker',
+      notice: options?.notice || null,
+    });
+  };
 
   const handleToggleLanguage = (lang: Language) => {
     setState((prev) => ({ ...prev, language: lang }));
   };
 
   const handleToggleSaveJob = (jobId: string) => {
+    const access = canAccessActivity(currentUser, 'save_job');
+    if (!access.allowed || !currentUser) {
+      openAuthModal({
+        mode: 'signup',
+        role: 'seeker',
+        notice:
+          'Registration is required to bookmark and manage saved jobs. Job seekers are also registered automatically when applying for a specific job.',
+      });
+      return;
+    }
+
+    const emailKey = currentUser.email.toLowerCase();
     setState((prev) => {
-      const exists = prev.savedJobIds.includes(jobId);
-      const nextSaved = exists
-        ? prev.savedJobIds.filter((id) => id !== jobId)
-        : [jobId, ...prev.savedJobIds];
-      return { ...prev, savedJobIds: nextSaved };
+      const existing = prev.savedJobIdsByUser[emailKey] || [];
+      const exists = existing.includes(jobId);
+      const nextSaved = exists ? existing.filter((id) => id !== jobId) : [jobId, ...existing];
+      return {
+        ...prev,
+        savedJobIdsByUser: {
+          ...prev.savedJobIdsByUser,
+          [emailKey]: nextSaved,
+        },
+      };
     });
   };
 
@@ -115,48 +185,86 @@ export default function App() {
     resumeUrl: string;
     yearsExperience: string;
     coverNote: string;
-  }) => {
-    const newApp: JobApplication = {
-      id: `app-${Date.now()}`,
-      jobId: payload.job.id,
-      jobTitle: payload.job.titleEn,
-      companyName: payload.job.companyName,
-      applicantName: payload.applicantName,
-      applicantEmail: payload.applicantEmail,
-      phone: payload.phone,
-      resumeUrl: payload.resumeUrl,
-      yearsExperience: payload.yearsExperience,
-      coverNote: payload.coverNote,
-      status: 'Submitted',
-      createdAt: new Date().toISOString(),
-    };
+    password?: string;
+    confirmPassword?: string;
+  }): string | null => {
+    try {
+      const result = registerSeekerAndCreateApplication(state.users, currentUser, payload);
+      const nowIso = new Date().toISOString();
+      const logsToAdd = [
+        {
+          id: `log-${Date.now()}-app`,
+          userEmail: result.actorEmail,
+          actionType: 'JOB_APPLICATION',
+          details: `Applied to "${payload.job.titleEn}" at ${payload.job.companyName}`,
+          createdAt: nowIso,
+        },
+      ];
 
-    const logEntry = {
-      id: `log-${Date.now()}`,
-      userEmail: payload.applicantEmail,
-      actionType: 'JOB_APPLICATION',
-      details: `Applied to "${payload.job.titleEn}" at ${payload.job.companyName}`,
-      createdAt: new Date().toISOString(),
-    };
+      if (result.newUser) {
+        const regLog = {
+          id: `log-${Date.now()}-reg`,
+          userEmail: result.newUser.email,
+          actionType: 'REGISTER_SEEKER_ON_APPLY',
+          details: `Registered Job Seeker account while applying for "${payload.job.titleEn}".`,
+          createdAt: nowIso,
+        };
+        logsToAdd.unshift(regLog);
+        void pushUserProfileAndAuditToSupabase(result.newUser, regLog);
+      }
 
-    setState((prev) => ({
-      ...prev,
-      applications: [newApp, ...prev.applications],
-      logs: [logEntry, ...prev.logs],
-    }));
-    setApplyModalJob(null);
-    showToast(`Application submitted for ${payload.job.titleEn}.`);
+      setState((prev) => ({
+        ...prev,
+        users: result.newUser ? [...prev.users, result.newUser] : prev.users,
+        currentUserEmail: result.newUser ? result.newUser.email : prev.currentUserEmail,
+        applications: [result.application, ...prev.applications],
+        logs: [...logsToAdd, ...prev.logs],
+      }));
+      setApplyModalJob(null);
+      showToast(
+        result.newUser
+          ? `Job Seeker account registered & application submitted for ${payload.job.titleEn}.`
+          : `Application submitted for ${payload.job.titleEn}.`
+      );
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to submit application.';
+    }
+  };
+
+  const handleRequestBuyProduct = (product: DigitalProduct) => {
+    const access = canAccessActivity(currentUser, 'store_checkout');
+    if (!access.allowed || !currentUser) {
+      setPendingProductAfterAuth(product);
+      openAuthModal({
+        mode: 'signup',
+        role: 'seeker',
+        notice:
+          'Registration and sign-in are required before purchasing or downloading digital materials.',
+      });
+      return;
+    }
+    setCheckoutProduct(product);
   };
 
   const handleBuyProductWithReceipt = (
     product: DigitalProduct,
     payment: PaymentSubmissionInput
   ) => {
+    const access = canAccessActivity(currentUser, 'store_checkout');
+    if (!access.allowed || !currentUser) {
+      showToast('Please register and sign in before submitting payment.', true);
+      return;
+    }
+
     try {
-      const { order, receipt } = createMaterialOrderWithPayment(product, payment);
+      const { order, receipt } = createMaterialOrderWithPayment(product, {
+        ...payment,
+        payerEmail: currentUser.email,
+      });
       const logEntry = {
         id: `log-${Date.now()}`,
-        userEmail: payment.payerEmail,
+        userEmail: currentUser.email,
         actionType: 'SUBMIT_STORE_RECEIPT',
         details: `Submitted ${payment.paymentMethod} ref ${payment.transactionRef} for "${product.titleEn}".`,
         createdAt: new Date().toISOString(),
@@ -179,10 +287,26 @@ export default function App() {
   };
 
   const handleDownloadMaterial = (product: DigitalProduct, order: MaterialOrder) => {
+    const access = canAccessActivity(currentUser, 'store_download');
+    if (!access.allowed || !currentUser) {
+      openAuthModal({
+        mode: 'signin',
+        notice: 'Sign in with your registered account to download approved materials.',
+      });
+      return;
+    }
+    if (
+      order.buyerEmail.toLowerCase() !== currentUser.email.toLowerCase() &&
+      currentUser.role !== 'admin'
+    ) {
+      showToast('You are not authorized to download another buyer’s order.', true);
+      return;
+    }
     if (!canDownloadMaterial(order)) {
       showToast('Download is locked until Administrator verifies payment receipt.', true);
       return;
     }
+
     const receipt = state.receipts.find((r) => r.id === order.paymentReceiptId);
     const file = buildDownloadableMaterialFile(product, order, receipt);
     const blob = new Blob([file.content], { type: file.mimeType });
@@ -201,10 +325,19 @@ export default function App() {
     draft: JobDraftInput,
     payment: PaymentSubmissionInput
   ) => {
-    const { job, receipt } = createJobPostingWithPayment(draft, payment);
+    const access = canAccessActivity(currentUser, 'employer_hub');
+    if (!access.allowed || !currentUser) {
+      showToast(access.reason || 'Verified Employer account required.', true);
+      return;
+    }
+
+    const { job, receipt } = createJobPostingWithPayment(
+      { ...draft, employerEmail: currentUser.email },
+      { ...payment, payerEmail: currentUser.email }
+    );
     const logEntry = {
       id: `log-${Date.now()}`,
-      userEmail: payment.payerEmail,
+      userEmail: currentUser.email,
       actionType: 'SUBMIT_JOB_RECEIPT',
       details: `Submitted job "${job.titleEn}" with ${payment.paymentMethod} ref ${payment.transactionRef}.`,
       createdAt: new Date().toISOString(),
@@ -223,18 +356,23 @@ export default function App() {
   };
 
   const handleApproveReceipt = (receiptId: string) => {
+    if (!canAccessActivity(currentUser, 'admin_console').allowed || !currentUser) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
+
     const rcpt = state.receipts.find((r) => r.id === receiptId);
     if (!rcpt) return;
 
     const updated = adminApprovePaymentReceipt(
       { jobs: state.jobs, orders: state.orders, receipts: state.receipts },
       receiptId,
-      currentUser?.email || 'admin@tatari.et'
+      currentUser.email
     );
 
     const logEntry = {
       id: `log-${Date.now()}`,
-      userEmail: currentUser?.email || 'admin@tatari.et',
+      userEmail: currentUser.email,
       actionType:
         rcpt.targetType === 'job_post' ? 'APPROVE_JOB_PAYMENT' : 'APPROVE_STORE_PAYMENT',
       details: `Verified ${rcpt.transactionRef} — ${
@@ -265,19 +403,24 @@ export default function App() {
   };
 
   const handleRejectReceipt = (receiptId: string, reason: string) => {
+    if (!canAccessActivity(currentUser, 'admin_console').allowed || !currentUser) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
+
     const rcpt = state.receipts.find((r) => r.id === receiptId);
     if (!rcpt) return;
 
     const updated = adminRejectPaymentReceipt(
       { jobs: state.jobs, orders: state.orders, receipts: state.receipts },
       receiptId,
-      currentUser?.email || 'admin@tatari.et',
+      currentUser.email,
       reason
     );
 
     const logEntry = {
       id: `log-${Date.now()}`,
-      userEmail: currentUser?.email || 'admin@tatari.et',
+      userEmail: currentUser.email,
       actionType: 'REJECT_PAYMENT_RECEIPT',
       details: `Rejected ${rcpt.transactionRef}: ${reason}`,
       createdAt: new Date().toISOString(),
@@ -294,6 +437,10 @@ export default function App() {
   };
 
   const handleUpdateApplicationStage = (appId: string, stage: ApplicationStage) => {
+    if (!canAccessActivity(currentUser, 'employer_hub').allowed) {
+      showToast('Verified Employer access required.', true);
+      return;
+    }
     setState((prev) => ({
       ...prev,
       applications: prev.applications.map((a) =>
@@ -304,6 +451,10 @@ export default function App() {
   };
 
   const handleSetJobStatus = (jobId: string, status: JobModerationStatus) => {
+    if (!canAccessActivity(currentUser, 'admin_console').allowed) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
     setState((prev) => ({
       ...prev,
       jobs: prev.jobs.map((j) =>
@@ -320,6 +471,10 @@ export default function App() {
   };
 
   const handleToggleProductActive = (productId: string) => {
+    if (!canAccessActivity(currentUser, 'admin_console').allowed) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
     setState((prev) => ({
       ...prev,
       products: prev.products.map((p) =>
@@ -331,10 +486,14 @@ export default function App() {
   const handleAddProduct = (
     payload: Omit<DigitalProduct, 'id' | 'sellerEmail' | 'active' | 'createdAt'>
   ) => {
+    if (!canAccessActivity(currentUser, 'admin_console').allowed || !currentUser) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
     const newProd: DigitalProduct = {
       ...payload,
       id: `prod-${Date.now()}`,
-      sellerEmail: currentUser?.email || 'admin@tatari.et',
+      sellerEmail: currentUser.email,
       imageUrl: '/src/assets/images/store_kpi_dashboard_1794985400650.jpg',
       active: true,
       createdAt: new Date().toISOString(),
@@ -347,45 +506,167 @@ export default function App() {
   };
 
   const handleSetUserStatus = (email: string, status: AccountStatus) => {
+    try {
+      const nextUsers = adminUpdateAccountStatus(state.users, currentUser, email, status);
+      const updatedUser = nextUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      const logEntry = {
+        id: `log-${Date.now()}`,
+        userEmail: currentUser?.email || 'admin@tatari.et',
+        actionType: status === 'approved' ? 'APPROVE_USER_ACCOUNT' : 'SUSPEND_USER_ACCOUNT',
+        details: `Set account ${email} status to ${status}.`,
+        createdAt: new Date().toISOString(),
+      };
+      if (updatedUser) {
+        void pushUserProfileAndAuditToSupabase(updatedUser, logEntry);
+      }
+      setState((prev) => ({
+        ...prev,
+        users: nextUsers,
+        currentUserEmail:
+          status === 'suspended' &&
+          prev.currentUserEmail.toLowerCase() === email.toLowerCase()
+            ? ''
+            : prev.currentUserEmail,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`User ${email} marked as ${status}.`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unauthorized user update.', true);
+    }
+  };
+
+  const handleSignIn = (email: string, password: string): string | null => {
+    if (lockoutUntilMs > Date.now()) {
+      return `Too many failed attempts. Try again in ${Math.ceil(
+        (lockoutUntilMs - Date.now()) / 1000
+      )}s.`;
+    }
+
+    const result = authenticateCredentials(state.users, email, password);
+    const nowIso = new Date().toISOString();
+
+    if (!result.user) {
+      const nextFails = failedLoginCount + 1;
+      setFailedLoginCount(nextFails);
+      if (nextFails >= 5) {
+        setLockoutUntilMs(Date.now() + 60_000);
+        setNowMs(Date.now());
+      }
+      const failLog = {
+        id: `log-${Date.now()}-fail`,
+        userEmail: email.trim().toLowerCase() || 'unknown',
+        actionType: nextFails >= 5 ? 'AUTH_LOCKOUT' : 'LOGIN_FAILED',
+        details: `Failed sign-in attempt (${nextFails}/5).`,
+        createdAt: nowIso,
+      };
+      setState((prev) => ({ ...prev, logs: [failLog, ...prev.logs] }));
+      return result.error || 'Invalid credentials.';
+    }
+
+    setFailedLoginCount(0);
+    setLockoutUntilMs(0);
+    const signedInUser = result.user;
+    const loginLog = {
+      id: `log-${Date.now()}-login`,
+      userEmail: signedInUser.email,
+      actionType: 'LOGIN_SUCCESS',
+      details: `Authenticated as ${signedInUser.role.toUpperCase()} (${signedInUser.status}).`,
+      createdAt: nowIso,
+    };
+
     setState((prev) => ({
       ...prev,
-      users: prev.users.map((u) => (u.email === email ? { ...u, status } : u)),
+      currentUserEmail: signedInUser.email,
+      users: prev.users.map((u) =>
+        u.email.toLowerCase() === signedInUser.email.toLowerCase()
+          ? { ...u, lastLoginAt: nowIso }
+          : u
+      ),
+      logs: [loginLog, ...prev.logs],
     }));
-    showToast(`User ${email} marked as ${status}.`);
+
+    if (pendingProductAfterAuth) {
+      setCheckoutProduct(pendingProductAfterAuth);
+      setPendingProductAfterAuth(null);
+    }
+    showToast(`Signed in securely as ${signedInUser.fullName}.`);
+    return null;
   };
 
-  const handleSignIn = (email: string) => {
-    setState((prev) => ({ ...prev, currentUserEmail: email }));
-    showToast(`Signed in as ${email}.`);
+  const handleSignOut = () => {
+    const actor = currentUser?.email || 'guest';
+    setPendingProductAfterAuth(null);
+    setState((prev) => ({
+      ...prev,
+      currentUserEmail: '',
+      logs: [
+        {
+          id: `log-${Date.now()}-logout`,
+          userEmail: actor,
+          actionType: 'LOGOUT',
+          details: `Signed out from ${actor}.`,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev.logs,
+      ],
+    }));
+    showToast('You have signed out.');
   };
 
-  const handleRegister = (user: {
+  const handleRegister = (userInput: {
     email: string;
     fullName: string;
     companyName?: string;
-    phone?: string;
-    role: UserRole;
-  }) => {
-    const newProfile = {
-      email: user.email,
-      fullName: user.fullName,
-      companyName: user.companyName,
-      phone: user.phone,
-      role: user.role,
-      status: 'approved' as const,
-      createdAt: new Date().toISOString(),
-    };
-    setState((prev) => ({
-      ...prev,
-      users: prev.users.some((u) => u.email === user.email)
-        ? prev.users
-        : [...prev.users, newProfile],
-      currentUserEmail: user.email,
-    }));
-    showToast(`Account created and signed in as ${user.email}.`);
+    tinNumber?: string;
+    phone: string;
+    role: 'seeker' | 'employer';
+    password: string;
+    confirmPassword: string;
+  }): string | null => {
+    try {
+      const newProfile = registerVerifiedRoleAccount(state.users, userInput.role, userInput);
+      const regLog = {
+        id: `log-${Date.now()}-reg`,
+        userEmail: newProfile.email,
+        actionType:
+          newProfile.role === 'employer' ? 'REGISTER_EMPLOYER' : 'REGISTER_SEEKER',
+        details:
+          newProfile.role === 'employer'
+            ? `Registered Employer "${newProfile.companyName}" (TIN: ${newProfile.tinNumber}) — pending Admin verification.`
+            : `Registered Job Seeker & Digital Store account.`,
+        createdAt: new Date().toISOString(),
+      };
+
+      void pushUserProfileAndAuditToSupabase(newProfile, regLog);
+
+      setState((prev) => ({
+        ...prev,
+        users: [...prev.users, newProfile],
+        currentUserEmail: newProfile.email,
+        logs: [regLog, ...prev.logs],
+      }));
+
+      if (pendingProductAfterAuth) {
+        setCheckoutProduct(pendingProductAfterAuth);
+        setPendingProductAfterAuth(null);
+      }
+
+      showToast(
+        newProfile.role === 'employer'
+          ? 'Employer registered. Awaiting Administrator verification before posting jobs.'
+          : `Account registered and signed in as ${newProfile.email}.`
+      );
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to register account.';
+    }
   };
 
   const handleExportCsv = () => {
+    if (!canAccessActivity(currentUser, 'admin_console').allowed) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
     const rows = [
       ['Type', 'Title', 'User', 'Method', 'TXN Ref', 'Amount ETB', 'Status'],
       ...state.receipts.map((r) => [
@@ -421,14 +702,14 @@ export default function App() {
         currentUser={currentUser}
         pendingApprovalCount={pendingApprovalCount}
         language={state.language}
-        onOpenAuth={() => setAuthModalOpen(true)}
+        onOpenAuth={() => openAuthModal({ mode: 'signin' })}
       />
 
       <div className="flex-1">
         {activeView === 'jobs' && (
           <JobBoardView
             jobs={state.jobs}
-            savedJobIds={state.savedJobIds}
+            savedJobIds={currentSavedJobIds}
             applications={state.applications}
             currentUserEmail={state.currentUserEmail}
             language={state.language}
@@ -445,7 +726,7 @@ export default function App() {
             orders={state.orders}
             currentUserEmail={state.currentUserEmail}
             language={state.language}
-            onBuyProduct={(product) => setCheckoutProduct(product)}
+            onBuyProduct={handleRequestBuyProduct}
             onDownloadMaterial={handleDownloadMaterial}
           />
         )}
@@ -454,7 +735,7 @@ export default function App() {
           <MyActivityView
             currentUserEmail={state.currentUserEmail}
             jobs={state.jobs}
-            savedJobIds={state.savedJobIds}
+            savedJobIds={currentSavedJobIds}
             applications={state.applications}
             orders={state.orders}
             products={state.products}
@@ -464,6 +745,13 @@ export default function App() {
             onDownloadMaterial={handleDownloadMaterial}
             onBrowseJobs={() => setActiveView('jobs')}
             onBrowseStore={() => setActiveView('store')}
+            onRequireAuth={() =>
+              openAuthModal({
+                mode: 'signin',
+                notice:
+                  'Sign in or register to view saved jobs, application status, and digital store downloads.',
+              })
+            }
           />
         )}
 
@@ -475,7 +763,7 @@ export default function App() {
             receipts={state.receipts}
             onSubmitJobWithPayment={handleSubmitJobWithPayment}
             onUpdateApplicationStage={handleUpdateApplicationStage}
-            onRequireAuth={() => setAuthModalOpen(true)}
+            onRequireAuth={(opts) => openAuthModal(opts)}
           />
         )}
 
@@ -494,7 +782,13 @@ export default function App() {
             onOpenAddProduct={() => setAddProductModalOpen(true)}
             onSetUserStatus={handleSetUserStatus}
             onExportCsv={handleExportCsv}
-            onQuickSwitchAdmin={() => handleSignIn('admin@tatari.et')}
+            onOpenAdminSignIn={() =>
+              openAuthModal({
+                mode: 'signin',
+                notice:
+                  'Sign in with Administrator credentials to access payment approvals and user governance.',
+              })
+            }
           />
         )}
       </div>
@@ -540,11 +834,17 @@ export default function App() {
           job={applyModalJob}
           currentUser={currentUser}
           onClose={() => setApplyModalJob(null)}
+          onOpenSignIn={() =>
+            openAuthModal({
+              mode: 'signin',
+              notice: 'Sign in with your Job Seeker account to apply with your saved profile.',
+            })
+          }
           onSubmit={handleSubmitApplication}
         />
       )}
 
-      {checkoutProduct && (
+      {checkoutProduct && currentUser && (
         <PaymentCheckoutModal
           product={checkoutProduct}
           currentUser={currentUser}
@@ -553,12 +853,19 @@ export default function App() {
         />
       )}
 
-      {authModalOpen && (
+      {authConfig.open && (
         <AuthModal
           currentUser={currentUser}
-          users={state.users}
-          onClose={() => setAuthModalOpen(false)}
+          initialMode={authConfig.mode}
+          initialRole={authConfig.role}
+          contextNotice={authConfig.notice}
+          lockoutSecondsRemaining={lockoutSecondsRemaining}
+          onClose={() => {
+            setAuthConfig((prev) => ({ ...prev, open: false }));
+            setPendingProductAfterAuth(null);
+          }}
           onSignIn={handleSignIn}
+          onSignOut={handleSignOut}
           onRegister={handleRegister}
         />
       )}

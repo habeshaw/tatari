@@ -12,20 +12,24 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     company_name TEXT,
     tin_number TEXT,
     phone TEXT,
-    role TEXT NOT NULL DEFAULT 'seeker',
-    status TEXT NOT NULL DEFAULT 'approved',
+    role TEXT NOT NULL DEFAULT 'seeker' CHECK (role IN ('seeker', 'employer', 'admin')),
+    status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'suspended')),
+    password_hash TEXT,
+    last_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS company_name TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS tin_number TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
 
-INSERT INTO public.profiles (email, full_name, company_name, phone, role, status)
+INSERT INTO public.profiles (email, full_name, company_name, tin_number, phone, role, status)
 VALUES
-  ('admin@tatari.et', 'TATARI System Administrator', 'TATARI Consulting PLC', '+251911000001', 'admin', 'approved'),
-  ('hr@addistech.et', 'Meron Tadesse', 'Addis Tech Manufacturing PLC', '+251911223344', 'employer', 'approved'),
-  ('abebe@tatari.et', 'Abebe Bikila', NULL, '+251911556677', 'seeker', 'approved')
+  ('admin@tatari.et', 'TATARI System Administrator', 'TATARI Consulting PLC', '0011223344', '+251911000001', 'admin', 'approved'),
+  ('hr@addistech.et', 'Meron Tadesse', 'Addis Tech Manufacturing PLC', '0045678912', '+251911223344', 'employer', 'approved'),
+  ('abebe@tatari.et', 'Abebe Bikila', NULL, NULL, '+251911556677', 'seeker', 'approved')
 ON CONFLICT (email) DO UPDATE
 SET full_name = EXCLUDED.full_name,
     role = EXCLUDED.role,

@@ -32,7 +32,7 @@ interface AdminConsoleViewProps {
   onOpenAddProduct: () => void;
   onSetUserStatus: (email: string, status: AccountStatus) => void;
   onExportCsv: () => void;
-  onQuickSwitchAdmin: () => void;
+  onOpenAdminSignIn: () => void;
 }
 
 export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
@@ -49,39 +49,44 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   onOpenAddProduct,
   onSetUserStatus,
   onExportCsv,
-  onQuickSwitchAdmin,
+  onOpenAdminSignIn,
 }) => {
   const [tab, setTab] = useState<'payments' | 'jobs' | 'store' | 'users'>('payments');
+  const [userFilter, setUserFilter] = useState<'all' | AccountStatus>('all');
   const [rejectTarget, setRejectTarget] = useState<PaymentReceipt | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [previewReceiptImg, setPreviewReceiptImg] = useState<string | null>(null);
 
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' && currentUser?.status === 'approved';
 
   if (!isAdmin) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <div className="rounded-xl border border-slate-200 bg-white p-8">
+        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-xs">
           <ShieldCheck className="mx-auto h-10 w-10 text-[#164081]" />
           <h1 className="mt-3 font-display text-xl font-bold text-slate-900">
-            Administrator Access Required
+            Administrator Authentication Required
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Only the authorized Administrator (<span className="font-mono">admin@tatari.et</span>)
-            can verify payment receipts, unlock digital material downloads, and publish employer job
-            postings.
+            This governance console is strictly restricted to authenticated Administrator accounts.
+            Sign in with your Administrator email and password to verify payment receipts, approve
+            employer registrations, and manage platform content.
           </p>
           <button
             type="button"
-            onClick={onQuickSwitchAdmin}
+            onClick={onOpenAdminSignIn}
             className="mt-5 rounded-lg bg-[#164081] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#102E61]"
           >
-            Sign In as Administrator (admin@tatari.et)
+            Sign In with Administrator Credentials
           </button>
         </div>
       </div>
     );
   }
+
+  const pendingUsersCount = users.filter((u) => u.status === 'pending').length;
+  const filteredUsers =
+    userFilter === 'all' ? users : users.filter((u) => u.status === userFilter);
 
   const pendingReceipts = receipts.filter((r) => r.status === 'pending_verification');
   const verifiedTotalEtb = receipts
@@ -196,6 +201,7 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
             }`}
           >
             Users &amp; Audit Logs
+            {pendingUsersCount > 0 ? ` (${pendingUsersCount} pending)` : ''}
           </button>
         </div>
       </div>
@@ -405,29 +411,76 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
       {tab === 'users' && (
         <section className="mt-6 space-y-6">
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600">
-              Registered Accounts
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                Registered Accounts ({filteredUsers.length})
+              </span>
+              <div className="inline-flex rounded-lg bg-slate-100 p-1 text-xs font-semibold">
+                {(['all', 'pending', 'approved', 'suspended'] as const).map((statusKey) => (
+                  <button
+                    key={statusKey}
+                    type="button"
+                    onClick={() => setUserFilter(statusKey)}
+                    className={`rounded-md px-2.5 py-1 capitalize ${
+                      userFilter === statusKey
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {statusKey}
+                  </button>
+                ))}
+              </div>
             </div>
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
                 <tr>
                   <th className="px-5 py-3">Name &amp; Email</th>
+                  <th className="px-5 py-3">Organization / TIN</th>
                   <th className="px-5 py-3">Role</th>
                   <th className="px-5 py-3">Status</th>
                   <th className="px-5 py-3">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {users.map((u) => (
+                {filteredUsers.map((u) => (
                   <tr key={u.email}>
                     <td className="px-5 py-3">
                       <div className="font-semibold text-slate-900">{u.fullName}</div>
-                      <div className="text-xs text-slate-500">{u.email}</div>
+                      <div className="text-xs text-slate-500">
+                        {u.email} {u.phone ? `· ${u.phone}` : ''}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-xs text-slate-600">
+                      {u.companyName ? (
+                        <div>
+                          <div className="font-medium text-slate-800">{u.companyName}</div>
+                          {u.tinNumber && (
+                            <div className="font-mono text-[11px] text-slate-500">
+                              TIN: {u.tinNumber}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-xs font-semibold uppercase text-slate-700">
                       {u.role}
                     </td>
-                    <td className="px-5 py-3 text-xs font-semibold text-slate-700">{u.status}</td>
+                    <td className="px-5 py-3 text-xs font-semibold">
+                      <span
+                        className={
+                          u.status === 'approved'
+                            ? 'text-emerald-700'
+                            : u.status === 'pending'
+                            ? 'text-amber-700'
+                            : 'text-rose-700'
+                        }
+                      >
+                        {u.status}
+                      </span>
+                    </td>
                     <td className="px-5 py-3">
                       {u.email === 'admin@tatari.et' ? (
                         <span className="text-xs text-slate-400">Primary Admin</span>
@@ -435,7 +488,7 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
                         <button
                           type="button"
                           onClick={() => onSetUserStatus(u.email, 'suspended')}
-                          className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          className="rounded-lg border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
                         >
                           Suspend
                         </button>
@@ -445,7 +498,7 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
                           onClick={() => onSetUserStatus(u.email, 'approved')}
                           className="rounded-lg bg-[#0F766E] px-3 py-1 text-xs font-semibold text-white hover:bg-[#0D625C]"
                         >
-                          Approve
+                          {u.status === 'pending' ? 'Approve Account' : 'Reactivate'}
                         </button>
                       )}
                     </td>
