@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  adminCreateUserAccount,
+  adminResetUserPassword,
   adminUpdateAccountStatus,
+  adminUpdateUserRole,
   authenticateCredentials,
   canAccessActivity,
+  changeOwnPassword,
+  filterUsersForAdmin,
   hashUserPassword,
   registerSeekerAndCreateApplication,
   registerVerifiedRoleAccount,
@@ -108,3 +113,78 @@ test('suspended accounts are rejected at login and non-admins cannot modify user
   assert.equal(authResult.user, undefined);
   assert.match(authResult.error || '', /suspended/i);
 });
+
+test('admin search, direct user creation, role change, and admin password reset enforce governance rules', () => {
+  const admin = SEED_USERS.find((u) => u.email === 'admin@tatari.et')!;
+  const seeker = SEED_USERS.find((u) => u.role === 'seeker')!;
+
+  // Search by company / TIN / email
+  const employerMatches = filterUsersForAdmin(SEED_USERS, { query: 'addis', role: 'employer' });
+  assert.equal(employerMatches.length, 1);
+  assert.equal(employerMatches[0].email, 'hr@addistech.et');
+
+  // Non-admin cannot create users directly
+  assert.throws(() =>
+    adminCreateUserAccount(SEED_USERS, seeker, {
+      email: 'unauth@tatari.et',
+      fullName: 'Unauth User',
+      role: 'employer',
+      status: 'approved',
+      phone: '+251911223344',
+      companyName: 'Test Co',
+      tinNumber: '1234567',
+      password: 'Password123',
+      confirmPassword: 'Password123',
+    })
+  );
+
+  // Admin creates verified employer
+  const { users: withNewEmp, createdUser } = adminCreateUserAccount(SEED_USERS, admin, {
+    email: 'hr@habeshabank.et',
+    fullName: 'Mekdes Alemu',
+    role: 'employer',
+    status: 'approved',
+    phone: '+251911554433',
+    companyName: 'Habesha Bank S.C.',
+    tinNumber: '0011223344',
+    password: 'BankPass#2026',
+    confirmPassword: 'BankPass#2026',
+  });
+  assert.equal(createdUser.status, 'approved');
+  assert.equal(verifyUserPassword(createdUser, 'BankPass#2026'), true);
+
+  // Admin updates user role & blocks primary admin role change
+  const roleUpdated = adminUpdateUserRole(withNewEmp, admin, 'abebe@tatari.et', 'employer');
+  assert.equal(roleUpdated.find((u) => u.email === 'abebe@tatari.et')?.role, 'employer');
+  assert.throws(() => adminUpdateUserRole(roleUpdated, admin, 'admin@tatari.et', 'seeker'));
+
+  // Admin resets user password
+  const resetList = adminResetUserPassword(
+    roleUpdated,
+    admin,
+    'abebe@tatari.et',
+    'ResetPass#99',
+    'ResetPass#99'
+  );
+  const authNew = authenticateCredentials(resetList, 'abebe@tatari.et', 'ResetPass#99');
+  assert.ok(authNew.user);
+});
+
+test('self-service password rotation validates current password and strength', () => {
+  assert.throws(() =>
+    changeOwnPassword(SEED_USERS, 'abebe@tatari.et', 'WrongCurrent1', 'NewPass#123', 'NewPass#123')
+  );
+  assert.throws(() =>
+    changeOwnPassword(SEED_USERS, 'abebe@tatari.et', 'Seeker@2026', 'weak', 'weak')
+  );
+  const rotated = changeOwnPassword(
+    SEED_USERS,
+    'abebe@tatari.et',
+    'Seeker@2026',
+    'AbebeNew#2026',
+    'AbebeNew#2026'
+  );
+  assert.equal(authenticateCredentials(rotated, 'abebe@tatari.et', 'Seeker@2026').user, undefined);
+  assert.ok(authenticateCredentials(rotated, 'abebe@tatari.et', 'AbebeNew#2026').user);
+});
+

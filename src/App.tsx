@@ -8,6 +8,7 @@ import { AdminConsoleView } from './components/AdminConsoleView';
 import { DigitalStoreView } from './components/DigitalStoreView';
 import { EmployerHubView } from './components/EmployerHubView';
 import { Header } from './components/Header';
+import { HelpModal } from './components/HelpModal';
 import { JobBoardView } from './components/JobBoardView';
 import {
   AddProductModal,
@@ -25,11 +26,16 @@ import {
   type PlatformState,
 } from './lib/repository';
 import {
+  adminCreateUserAccount,
+  adminResetUserPassword,
   adminUpdateAccountStatus,
+  adminUpdateUserRole,
   authenticateCredentials,
   canAccessActivity,
+  changeOwnPassword,
   registerSeekerAndCreateApplication,
   registerVerifiedRoleAccount,
+  type AdminCreateUserInput,
 } from './lib/security';
 import {
   adminApprovePaymentReceipt,
@@ -50,11 +56,12 @@ import type {
   JobModerationStatus,
   Language,
   MaterialOrder,
+  UserRole,
 } from './types/domain';
 
 interface AuthModalConfig {
   open: boolean;
-  mode: 'signin' | 'signup';
+  mode: 'signin' | 'signup' | 'password';
   role: 'seeker' | 'employer';
   notice: string | null;
 }
@@ -75,6 +82,7 @@ export default function App() {
     notice: null,
   });
   const [addProductModalOpen, setAddProductModalOpen] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [failedLoginCount, setFailedLoginCount] = useState(0);
   const [lockoutUntilMs, setLockoutUntilMs] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -134,7 +142,7 @@ export default function App() {
   const lockoutSecondsRemaining = Math.max(0, Math.ceil((lockoutUntilMs - nowMs) / 1000));
 
   const openAuthModal = (options?: {
-    mode?: 'signin' | 'signup';
+    mode?: 'signin' | 'signup' | 'password';
     role?: 'seeker' | 'employer';
     notice?: string;
   }) => {
@@ -535,6 +543,136 @@ export default function App() {
     }
   };
 
+  const handleAdminCreateUser = (input: AdminCreateUserInput): string | null => {
+    try {
+      const { users: nextUsers, createdUser } = adminCreateUserAccount(
+        state.users,
+        currentUser,
+        input
+      );
+      const logEntry = {
+        id: `log-${Date.now()}-cuser`,
+        userEmail: currentUser?.email || 'admin@tatari.et',
+        actionType: 'ADMIN_CREATE_USER',
+        details: `Provisioned ${createdUser.role.toUpperCase()} account ${createdUser.email} (${createdUser.status}).`,
+        createdAt: new Date().toISOString(),
+      };
+      void pushUserProfileAndAuditToSupabase(createdUser, logEntry);
+      setState((prev) => ({
+        ...prev,
+        users: nextUsers,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`Account created for ${createdUser.fullName} (${createdUser.email}).`);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to create user account.';
+    }
+  };
+
+  const handleAdminUpdateUserRole = (email: string, nextRole: UserRole): string | null => {
+    try {
+      const nextUsers = adminUpdateUserRole(state.users, currentUser, email, nextRole);
+      const updatedUser = nextUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      const logEntry = {
+        id: `log-${Date.now()}-role`,
+        userEmail: currentUser?.email || 'admin@tatari.et',
+        actionType: 'ADMIN_UPDATE_ROLE',
+        details: `Changed role for ${email} to ${nextRole.toUpperCase()}.`,
+        createdAt: new Date().toISOString(),
+      };
+      if (updatedUser) {
+        void pushUserProfileAndAuditToSupabase(updatedUser, logEntry);
+      }
+      setState((prev) => ({
+        ...prev,
+        users: nextUsers,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`Role updated for ${email} (${nextRole.toUpperCase()}).`);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to update user role.';
+    }
+  };
+
+  const handleAdminResetUserPassword = (
+    email: string,
+    newPassword: string,
+    confirmPassword: string
+  ): string | null => {
+    try {
+      const nextUsers = adminResetUserPassword(
+        state.users,
+        currentUser,
+        email,
+        newPassword,
+        confirmPassword
+      );
+      const updatedUser = nextUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      const logEntry = {
+        id: `log-${Date.now()}-rpwd`,
+        userEmail: currentUser?.email || 'admin@tatari.et',
+        actionType: 'ADMIN_RESET_PASSWORD',
+        details: `Administrator reset password hash for ${email}.`,
+        createdAt: new Date().toISOString(),
+      };
+      if (updatedUser) {
+        void pushUserProfileAndAuditToSupabase(updatedUser, logEntry);
+      }
+      setState((prev) => ({
+        ...prev,
+        users: nextUsers,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`Password securely reset for ${email}.`);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to reset user password.';
+    }
+  };
+
+  const handleChangeOwnPassword = (
+    currentPassword: string,
+    newPassword: string,
+    confirmPassword: string
+  ): string | null => {
+    if (!currentUser) {
+      return 'You must be signed in to change your password.';
+    }
+    try {
+      const nextUsers = changeOwnPassword(
+        state.users,
+        currentUser.email,
+        currentPassword,
+        newPassword,
+        confirmPassword
+      );
+      const updatedUser = nextUsers.find(
+        (u) => u.email.toLowerCase() === currentUser.email.toLowerCase()
+      );
+      const logEntry = {
+        id: `log-${Date.now()}-cpwd`,
+        userEmail: currentUser.email,
+        actionType: 'USER_CHANGE_PASSWORD',
+        details: `User rotated account password securely.`,
+        createdAt: new Date().toISOString(),
+      };
+      if (updatedUser) {
+        void pushUserProfileAndAuditToSupabase(updatedUser, logEntry);
+      }
+      setState((prev) => ({
+        ...prev,
+        users: nextUsers,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast('Your password has been updated securely.');
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to update password.';
+    }
+  };
+
   const handleSignIn = (email: string, password: string): string | null => {
     if (lockoutUntilMs > Date.now()) {
       return `Too many failed attempts. Try again in ${Math.ceil(
@@ -703,6 +841,7 @@ export default function App() {
         pendingApprovalCount={pendingApprovalCount}
         language={state.language}
         onOpenAuth={() => openAuthModal({ mode: 'signin' })}
+        onOpenHelp={() => setHelpModalOpen(true)}
       />
 
       <div className="flex-1">
@@ -773,6 +912,8 @@ export default function App() {
             receipts={state.receipts}
             jobs={state.jobs}
             products={state.products}
+            applications={state.applications}
+            orders={state.orders}
             users={state.users}
             logs={state.logs}
             onApproveReceipt={handleApproveReceipt}
@@ -781,6 +922,9 @@ export default function App() {
             onToggleProductActive={handleToggleProductActive}
             onOpenAddProduct={() => setAddProductModalOpen(true)}
             onSetUserStatus={handleSetUserStatus}
+            onCreateUser={handleAdminCreateUser}
+            onUpdateUserRole={handleAdminUpdateUserRole}
+            onResetUserPassword={handleAdminResetUserPassword}
             onExportCsv={handleExportCsv}
             onOpenAdminSignIn={() =>
               openAuthModal({
@@ -801,7 +945,7 @@ export default function App() {
             <span aria-hidden="true">·</span>
             <span>Addis Ababa, Ethiopia · Job Portal &amp; Digital Store</span>
           </div>
-          <div className="flex items-center gap-5">
+          <div className="flex flex-wrap items-center justify-center gap-5">
             <button
               type="button"
               onClick={() => setActiveView('jobs')}
@@ -823,6 +967,20 @@ export default function App() {
             >
               Post a Job
             </button>
+            <button
+              type="button"
+              onClick={() => setHelpModalOpen(true)}
+              className="font-semibold text-[#164081] hover:underline"
+            >
+              Help Center
+            </button>
+            <a
+              href="/TATARI_Implementation_and_Administration_Guide.docx"
+              download="TATARI_Implementation_and_Administration_Guide.docx"
+              className="hover:text-slate-900 hover:underline"
+            >
+              Admin Guide (.docx)
+            </a>
             <span>© {new Date().getFullYear()} TATARI Consulting PLC</span>
           </div>
         </div>
@@ -867,6 +1025,7 @@ export default function App() {
           onSignIn={handleSignIn}
           onSignOut={handleSignOut}
           onRegister={handleRegister}
+          onChangePassword={handleChangeOwnPassword}
         />
       )}
 
@@ -874,6 +1033,16 @@ export default function App() {
         <AddProductModal
           onClose={() => setAddProductModalOpen(false)}
           onAddProduct={handleAddProduct}
+        />
+      )}
+
+      {helpModalOpen && (
+        <HelpModal
+          currentUser={currentUser}
+          language={state.language}
+          onClose={() => setHelpModalOpen(false)}
+          onNavigate={setActiveView}
+          onOpenAuth={(mode, role) => openAuthModal({ mode, role })}
         />
       )}
 

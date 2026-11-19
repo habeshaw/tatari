@@ -3,6 +3,7 @@ import type {
   JobApplication,
   JobListing,
   UserProfile,
+  UserRole,
 } from '../types/domain';
 
 export type ProtectedActivity =
@@ -402,3 +403,181 @@ export function adminUpdateAccountStatus(
     u.email.toLowerCase() === cleanTarget ? { ...u, status: nextStatus } : u
   );
 }
+
+export interface AdminUserFilterCriteria {
+  query?: string;
+  role?: 'all' | UserRole;
+  status?: 'all' | AccountStatus;
+}
+
+export function filterUsersForAdmin(
+  users: UserProfile[],
+  criteria: AdminUserFilterCriteria
+): UserProfile[] {
+  const q = (criteria.query || '').trim().toLowerCase();
+  const roleFilter = criteria.role || 'all';
+  const statusFilter = criteria.status || 'all';
+
+  return users.filter((u) => {
+    if (roleFilter !== 'all' && u.role !== roleFilter) return false;
+    if (statusFilter !== 'all' && u.status !== statusFilter) return false;
+    if (!q) return true;
+    const haystack = [
+      u.fullName,
+      u.email,
+      u.companyName || '',
+      u.tinNumber || '',
+      u.phone || '',
+      u.role,
+      u.status,
+    ]
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+export function changeOwnPassword(
+  users: UserProfile[],
+  actorEmail: string,
+  currentPassword: string,
+  newPassword: string,
+  confirmPassword: string
+): UserProfile[] {
+  const cleanActor = actorEmail.trim().toLowerCase();
+  const existing = users.find((u) => u.email.toLowerCase() === cleanActor);
+  if (!existing) {
+    throw new Error('Signed-in account not found.');
+  }
+  if (!verifyUserPassword(existing, currentPassword)) {
+    throw new Error('Current password is incorrect.');
+  }
+  const strengthErr = validatePasswordStrength(newPassword);
+  if (strengthErr) {
+    throw new Error(strengthErr);
+  }
+  if (newPassword !== confirmPassword) {
+    throw new Error('New password and confirmation do not match.');
+  }
+  if (newPassword === currentPassword) {
+    throw new Error('New password must be different from your current password.');
+  }
+  const nextHash = hashUserPassword(existing.email, newPassword);
+  return users.map((u) =>
+    u.email.toLowerCase() === cleanActor ? { ...u, passwordHash: nextHash } : u
+  );
+}
+
+export interface AdminCreateUserInput {
+  email: string;
+  fullName: string;
+  role: UserRole;
+  status: AccountStatus;
+  phone: string;
+  companyName?: string;
+  tinNumber?: string;
+  password: string;
+  confirmPassword: string;
+}
+
+export function adminCreateUserAccount(
+  users: UserProfile[],
+  actor: UserProfile | null,
+  input: AdminCreateUserInput,
+  nowIso: string = new Date().toISOString()
+): { users: UserProfile[]; createdUser: UserProfile } {
+  if (!actor || actor.role !== 'admin' || actor.status !== 'approved') {
+    throw new Error('Only an approved Administrator can create user accounts directly.');
+  }
+  const cleanEmail = input.email.trim().toLowerCase();
+  if (!validateEmailFormat(cleanEmail)) {
+    throw new Error('Please enter a valid email address.');
+  }
+  if (users.some((u) => u.email.toLowerCase() === cleanEmail)) {
+    throw new Error('An account with this email address already exists.');
+  }
+  if (input.fullName.trim().length < 2) {
+    throw new Error('Full name is required.');
+  }
+  if (input.phone.trim().length < 6) {
+    throw new Error('A valid phone number is required.');
+  }
+  const pwdErr = validatePasswordStrength(input.password);
+  if (pwdErr) throw new Error(pwdErr);
+  if (input.password !== input.confirmPassword) {
+    throw new Error('Passwords do not match.');
+  }
+  if (input.role === 'employer') {
+    if (!input.companyName || input.companyName.trim().length < 2) {
+      throw new Error('Company or organization name is required for Employer accounts.');
+    }
+    if (!input.tinNumber || input.tinNumber.trim().length < 5) {
+      throw new Error('Business TIN / License number (min 5 characters) is required for Employers.');
+    }
+  }
+
+  const createdUser: UserProfile = {
+    email: cleanEmail,
+    fullName: input.fullName.trim(),
+    companyName: input.role === 'employer' ? input.companyName?.trim() : undefined,
+    tinNumber: input.role === 'employer' ? input.tinNumber?.trim() : undefined,
+    phone: input.phone.trim(),
+    role: input.role,
+    status: input.status,
+    passwordHash: hashUserPassword(cleanEmail, input.password),
+    createdAt: nowIso,
+  };
+
+  return { users: [...users, createdUser], createdUser };
+}
+
+export function adminUpdateUserRole(
+  users: UserProfile[],
+  actor: UserProfile | null,
+  targetEmail: string,
+  nextRole: UserRole
+): UserProfile[] {
+  if (!actor || actor.role !== 'admin' || actor.status !== 'approved') {
+    throw new Error('Only an approved Administrator can change user roles.');
+  }
+  const cleanTarget = targetEmail.trim().toLowerCase();
+  if (cleanTarget === 'admin@tatari.et') {
+    throw new Error('Primary Administrator role cannot be modified.');
+  }
+  if (cleanTarget === actor.email.toLowerCase() && nextRole !== 'admin') {
+    throw new Error('You cannot demote your own active Administrator session.');
+  }
+  return users.map((u) =>
+    u.email.toLowerCase() === cleanTarget ? { ...u, role: nextRole } : u
+  );
+}
+
+export function adminResetUserPassword(
+  users: UserProfile[],
+  actor: UserProfile | null,
+  targetEmail: string,
+  newPassword: string,
+  confirmPassword: string
+): UserProfile[] {
+  if (!actor || actor.role !== 'admin' || actor.status !== 'approved') {
+    throw new Error('Only an approved Administrator can reset user passwords.');
+  }
+  const cleanTarget = targetEmail.trim().toLowerCase();
+  if (cleanTarget === 'admin@tatari.et' && actor.email.toLowerCase() !== 'admin@tatari.et') {
+    throw new Error('Only the Primary Administrator can rotate the primary admin password.');
+  }
+  const pwdErr = validatePasswordStrength(newPassword);
+  if (pwdErr) throw new Error(pwdErr);
+  if (newPassword !== confirmPassword) {
+    throw new Error('New password and confirmation do not match.');
+  }
+  const target = users.find((u) => u.email.toLowerCase() === cleanTarget);
+  if (!target) {
+    throw new Error('Target user account not found.');
+  }
+  const nextHash = hashUserPassword(target.email, newPassword);
+  return users.map((u) =>
+    u.email.toLowerCase() === cleanTarget ? { ...u, passwordHash: nextHash } : u
+  );
+}
+

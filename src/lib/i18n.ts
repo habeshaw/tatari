@@ -29,6 +29,7 @@ export const TRANSLATIONS: Record<
     adminConsoleTitle: string;
     approvePayment: string;
     rejectPayment: string;
+    helpButton: string;
   }
 > = {
   en: {
@@ -60,6 +61,7 @@ export const TRANSLATIONS: Record<
     adminConsoleTitle: 'Administrator Payment & Content Governance',
     approvePayment: 'Approve Payment',
     rejectPayment: 'Reject',
+    helpButton: 'Help',
   },
   am: {
     navJobs: 'ሥራ ይፈልጉ',
@@ -90,5 +92,6 @@ export const TRANSLATIONS: Record<
     adminConsoleTitle: 'የአስተዳዳሪ የክፍያ እና የይዘት ቁጥጥር',
     approvePayment: 'ክፍያውን አጽድቅ',
     rejectPayment: 'ውድቅ አድርግ',
+    helpButton: 'እገዛ',
   },
 };

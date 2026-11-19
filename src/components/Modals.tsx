@@ -508,10 +508,10 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
   );
 };
 
-/* 3. Secure Auth Sign In / Verified Role Registration Modal (No Passwordless Bypass) */
+/* 3. Secure Auth Sign In / Verified Role Registration / Change Password Modal */
 interface AuthModalProps {
   currentUser: UserProfile | null;
-  initialMode?: 'signin' | 'signup';
+  initialMode?: 'signin' | 'signup' | 'password';
   initialRole?: 'seeker' | 'employer';
   contextNotice?: string | null;
   lockoutSecondsRemaining?: number;
@@ -528,6 +528,11 @@ interface AuthModalProps {
     password: string;
     confirmPassword: string;
   }) => string | null;
+  onChangePassword: (
+    currentPassword: string,
+    newPassword: string,
+    confirmPassword: string
+  ) => string | null;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -540,11 +545,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onSignIn,
   onSignOut,
   onRegister,
+  onChangePassword,
 }) => {
-  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
+  const defaultMode: 'signin' | 'signup' | 'password' =
+    currentUser && initialMode === 'signin' && !contextNotice ? 'password' : initialMode;
+
+  const [mode, setMode] = useState<'signin' | 'signup' | 'password'>(defaultMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [tinNumber, setTinNumber] = useState('');
@@ -555,6 +566,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (mode === 'password') {
+      const err = onChangePassword(currentPassword, newPassword, confirmPassword);
+      if (err) {
+        setError(err);
+        return;
+      }
+      onClose();
+      return;
+    }
 
     if (mode === 'signin') {
       if (lockoutSecondsRemaining > 0) {
@@ -602,7 +623,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <span>TATARI Secure Access</span>
             </div>
             <h2 className="mt-0.5 font-display text-lg font-bold text-slate-900">
-              {mode === 'signin' ? 'Sign In to Your Account' : 'Register Verified Account'}
+              {mode === 'password'
+                ? 'Account Security & Password'
+                : mode === 'signin'
+                ? 'Sign In to Your Account'
+                : 'Register Verified Account'}
             </h2>
           </div>
           <button
@@ -660,8 +685,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div
           role="tablist"
           aria-label="Authentication mode"
-          className="mt-4 grid grid-cols-2 gap-1.5 rounded-lg bg-slate-100 p-1"
+          className={`mt-4 grid gap-1.5 rounded-lg bg-slate-100 p-1 ${
+            currentUser ? 'grid-cols-3' : 'grid-cols-2'
+          }`}
         >
+          {currentUser && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'password'}
+              onClick={() => {
+                setMode('password');
+                setError(null);
+              }}
+              className={`rounded-md py-1.5 text-xs font-semibold transition-colors ${
+                mode === 'password' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+              }`}
+            >
+              Change Password
+            </button>
+          )}
           <button
             type="button"
             role="tab"
@@ -674,7 +717,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               mode === 'signin' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
-            Sign In
+            {currentUser ? 'Switch Account' : 'Sign In'}
           </button>
           <button
             type="button"
@@ -702,123 +745,173 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
-          {mode === 'signup' && (
+          {mode === 'password' && currentUser ? (
             <>
               <label className="block text-xs font-semibold text-slate-700">
-                Account Type *
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as 'seeker' | 'employer')}
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
-                >
-                  <option value="seeker">Job Seeker &amp; Digital Store Buyer</option>
-                  <option value="employer">Employer / Hiring Organization</option>
-                </select>
-              </label>
-
-              {role === 'employer' && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
-                  Employer accounts require Company Name &amp; TIN verification by the Administrator
-                  before posting jobs or accessing candidate pipelines.
-                </div>
-              )}
-
-              <label className="block text-xs font-semibold text-slate-700">
-                Full Name *
+                Current Password *
                 <input
-                  type="text"
+                  type="password"
                   required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Enter your current password"
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
                 />
               </label>
-
-              {role === 'employer' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-semibold text-slate-700">
+                New Password *
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min 8 chars + letter & number"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Confirm New Password *
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter new password"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+              <button
+                type="submit"
+                className="w-full rounded-lg bg-[#164081] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#102E61]"
+              >
+                Update Password Securely
+              </button>
+            </>
+          ) : (
+            <>
+              {mode === 'signup' && (
+                <>
                   <label className="block text-xs font-semibold text-slate-700">
-                    Company Name *
+                    Account Type *
+                    <select
+                      value={role}
+                      onChange={(e) => setRole(e.target.value as 'seeker' | 'employer')}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                    >
+                      <option value="seeker">Job Seeker &amp; Digital Store Buyer</option>
+                      <option value="employer">Employer / Hiring Organization</option>
+                    </select>
+                  </label>
+
+                  {role === 'employer' && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                      Employer accounts require Company Name &amp; TIN verification by the
+                      Administrator before posting jobs or accessing candidate pipelines.
+                    </div>
+                  )}
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Full Name *
                     <input
                       type="text"
                       required
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      placeholder="e.g. EthioCorp PLC"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
                       className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
                     />
                   </label>
+
+                  {role === 'employer' && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Company Name *
+                        <input
+                          type="text"
+                          required
+                          value={companyName}
+                          onChange={(e) => setCompanyName(e.target.value)}
+                          placeholder="e.g. EthioCorp PLC"
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                        />
+                      </label>
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Business TIN / License *
+                        <input
+                          type="text"
+                          required
+                          value={tinNumber}
+                          onChange={(e) => setTinNumber(e.target.value)}
+                          placeholder="e.g. 0045678912"
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                        />
+                      </label>
+                    </div>
+                  )}
+
                   <label className="block text-xs font-semibold text-slate-700">
-                    Business TIN / License *
+                    Phone Number *
                     <input
                       type="text"
                       required
-                      value={tinNumber}
-                      onChange={(e) => setTinNumber(e.target.value)}
-                      placeholder="e.g. 0045678912"
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
                     />
                   </label>
-                </div>
+                </>
               )}
 
               <label className="block text-xs font-semibold text-slate-700">
-                Phone Number *
+                Email Address *
                 <input
-                  type="text"
+                  type="email"
                   required
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.et"
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
                 />
               </label>
+
+              <label className="block text-xs font-semibold text-slate-700">
+                Password *
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={
+                    mode === 'signup' ? 'Min 8 characters + letter & number' : 'Enter password'
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+
+              {mode === 'signup' && (
+                <label className="block text-xs font-semibold text-slate-700">
+                  Confirm Password *
+                  <input
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter password"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                  />
+                </label>
+              )}
+
+              <button
+                type="submit"
+                disabled={mode === 'signin' && lockoutSecondsRemaining > 0}
+                className="w-full rounded-lg bg-[#164081] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#102E61] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {mode === 'signin' ? 'Sign In Securely' : 'Create Verified Account'}
+              </button>
             </>
           )}
-
-          <label className="block text-xs font-semibold text-slate-700">
-            Email Address *
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@company.et"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
-            />
-          </label>
-
-          <label className="block text-xs font-semibold text-slate-700">
-            Password *
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === 'signup' ? 'Min 8 characters + letter & number' : 'Enter password'}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
-            />
-          </label>
-
-          {mode === 'signup' && (
-            <label className="block text-xs font-semibold text-slate-700">
-              Confirm Password *
-              <input
-                type="password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter password"
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
-              />
-            </label>
-          )}
-
-          <button
-            type="submit"
-            disabled={mode === 'signin' && lockoutSecondsRemaining > 0}
-            className="w-full rounded-lg bg-[#164081] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#102E61] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {mode === 'signin' ? 'Sign In Securely' : 'Create Verified Account'}
-          </button>
         </form>
       </div>
     </div>

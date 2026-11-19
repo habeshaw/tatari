@@ -3,19 +3,29 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  FileText,
+  KeyRound,
   Plus,
+  Search,
   ShieldCheck,
+  UserCog,
+  UserPlus,
+  X,
   XCircle,
 } from 'lucide-react';
+import { filterUsersForAdmin, type AdminCreateUserInput } from '../lib/security';
 import { formatCurrencyEtb, formatRelativeDays } from '../lib/storeLogic';
 import type {
   AccountStatus,
   AuditLogEntry,
   DigitalProduct,
+  JobApplication,
   JobListing,
   JobModerationStatus,
+  MaterialOrder,
   PaymentReceipt,
   UserProfile,
+  UserRole,
 } from '../types/domain';
 
 interface AdminConsoleViewProps {
@@ -23,6 +33,8 @@ interface AdminConsoleViewProps {
   receipts: PaymentReceipt[];
   jobs: JobListing[];
   products: DigitalProduct[];
+  applications: JobApplication[];
+  orders: MaterialOrder[];
   users: UserProfile[];
   logs: AuditLogEntry[];
   onApproveReceipt: (receiptId: string) => void;
@@ -31,6 +43,13 @@ interface AdminConsoleViewProps {
   onToggleProductActive: (productId: string) => void;
   onOpenAddProduct: () => void;
   onSetUserStatus: (email: string, status: AccountStatus) => void;
+  onCreateUser: (input: AdminCreateUserInput) => string | null;
+  onUpdateUserRole: (email: string, role: UserRole) => string | null;
+  onResetUserPassword: (
+    email: string,
+    newPassword: string,
+    confirmPassword: string
+  ) => string | null;
   onExportCsv: () => void;
   onOpenAdminSignIn: () => void;
 }
@@ -40,6 +59,8 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   receipts,
   jobs,
   products,
+  applications,
+  orders,
   users,
   logs,
   onApproveReceipt,
@@ -48,14 +69,41 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   onToggleProductActive,
   onOpenAddProduct,
   onSetUserStatus,
+  onCreateUser,
+  onUpdateUserRole,
+  onResetUserPassword,
   onExportCsv,
   onOpenAdminSignIn,
 }) => {
   const [tab, setTab] = useState<'payments' | 'jobs' | 'store' | 'users'>('payments');
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | UserRole>('all');
   const [userFilter, setUserFilter] = useState<'all' | AccountStatus>('all');
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [managedUserEmail, setManagedUserEmail] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<PaymentReceipt | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [previewReceiptImg, setPreviewReceiptImg] = useState<string | null>(null);
+
+  // Create user modal state
+  const [newFullName, setNewFullName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPhone, setNewPhone] = useState('+251911');
+  const [newRole, setNewRole] = useState<UserRole>('employer');
+  const [newStatus, setNewStatus] = useState<AccountStatus>('approved');
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [newTinNumber, setNewTinNumber] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newConfirmPassword, setNewConfirmPassword] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  // Manage user modal state
+  const [manageRole, setManageRole] = useState<UserRole>('seeker');
+  const [resetPwd, setResetPwd] = useState('');
+  const [resetConfirmPwd, setResetConfirmPwd] = useState('');
+  const [manageFeedback, setManageFeedback] = useState<{ text: string; isError?: boolean } | null>(
+    null
+  );
 
   const isAdmin = currentUser?.role === 'admin' && currentUser?.status === 'approved';
 
@@ -85,14 +133,59 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   }
 
   const pendingUsersCount = users.filter((u) => u.status === 'pending').length;
-  const filteredUsers =
-    userFilter === 'all' ? users : users.filter((u) => u.status === userFilter);
+  const approvedUsersCount = users.filter((u) => u.status === 'approved').length;
+  const suspendedUsersCount = users.filter((u) => u.status === 'suspended').length;
+  const filteredUsers = filterUsersForAdmin(users, {
+    query: userSearch,
+    role: userRoleFilter,
+    status: userFilter,
+  });
+
+  const managedUser = managedUserEmail
+    ? users.find((u) => u.email.toLowerCase() === managedUserEmail.toLowerCase()) || null
+    : null;
 
   const pendingReceipts = receipts.filter((r) => r.status === 'pending_verification');
   const verifiedTotalEtb = receipts
     .filter((r) => r.status === 'verified')
     .reduce((sum, r) => sum + Number(r.amountEtb || 0), 0);
   const liveJobsCount = jobs.filter((j) => j.status === 'approved').length;
+
+  const openManageModal = (u: UserProfile) => {
+    setManagedUserEmail(u.email);
+    setManageRole(u.role);
+    setResetPwd('');
+    setResetConfirmPwd('');
+    setManageFeedback(null);
+  };
+
+  const handleCreateUserSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateError(null);
+    const err = onCreateUser({
+      fullName: newFullName,
+      email: newEmail,
+      phone: newPhone,
+      role: newRole,
+      status: newStatus,
+      companyName: newCompanyName,
+      tinNumber: newTinNumber,
+      password: newPassword,
+      confirmPassword: newConfirmPassword,
+    });
+    if (err) {
+      setCreateError(err);
+      return;
+    }
+    setCreateUserOpen(false);
+    setNewFullName('');
+    setNewEmail('');
+    setNewPhone('+251911');
+    setNewCompanyName('');
+    setNewTinNumber('');
+    setNewPassword('');
+    setNewConfirmPassword('');
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -107,14 +200,24 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
               Verify payment receipts to publish employer jobs and unlock digital store downloads.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onExportCsv}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
-          >
-            <Download className="h-4 w-4" />
-            Export Ledger CSV
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <a
+              href="/TATARI_Implementation_and_Administration_Guide.docx"
+              download="TATARI_Implementation_and_Administration_Guide.docx"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+            >
+              <FileText className="h-4 w-4 text-[#164081]" />
+              Admin Guide (.docx)
+            </a>
+            <button
+              type="button"
+              onClick={onExportCsv}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+            >
+              <Download className="h-4 w-4" />
+              Export Ledger CSV
+            </button>
+          </div>
         </div>
 
         <dl className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -407,110 +510,197 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
         </section>
       )}
 
-      {/* Tab 4: Users & Audit Logs */}
+      {/* Tab 4: Secure & Easy User Management + Audit Logs */}
       {tab === 'users' && (
         <section className="mt-6 space-y-6">
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                Registered Accounts ({filteredUsers.length})
-              </span>
-              <div className="inline-flex rounded-lg bg-slate-100 p-1 text-xs font-semibold">
-                {(['all', 'pending', 'approved', 'suspended'] as const).map((statusKey) => (
-                  <button
-                    key={statusKey}
-                    type="button"
-                    onClick={() => setUserFilter(statusKey)}
-                    className={`rounded-md px-2.5 py-1 capitalize ${
-                      userFilter === statusKey
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {statusKey}
-                  </button>
-                ))}
-              </div>
+          {/* User Security Overview Strip */}
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <dt className="text-xs font-medium text-slate-500">Total Accounts</dt>
+              <dd className="mt-1 font-mono text-xl font-bold text-slate-900 tabular-nums">
+                {users.length}
+              </dd>
             </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <dt className="text-xs font-medium text-slate-500">Pending Verification</dt>
+              <dd className="mt-1 font-mono text-xl font-bold text-amber-700 tabular-nums">
+                {pendingUsersCount}
+              </dd>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <dt className="text-xs font-medium text-slate-500">Active Approved</dt>
+              <dd className="mt-1 font-mono text-xl font-bold text-emerald-700 tabular-nums">
+                {approvedUsersCount}
+              </dd>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <dt className="text-xs font-medium text-slate-500">Suspended Accounts</dt>
+              <dd className="mt-1 font-mono text-xl font-bold text-rose-700 tabular-nums">
+                {suspendedUsersCount}
+              </dd>
+            </div>
+          </dl>
+
+          {/* Search, Filter & Create User Controls */}
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-1 flex-wrap items-center gap-2.5">
+                <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
+                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="search"
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    placeholder="Search name, email, company, or TIN..."
+                    aria-label="Search registered users"
+                    className="w-full rounded-lg border border-slate-300 py-1.5 pl-9 pr-3 text-xs text-slate-900 focus:border-[#164081] focus:outline-none"
+                  />
+                </div>
+
+                <select
+                  aria-label="Filter users by role"
+                  value={userRoleFilter}
+                  onChange={(e) => setUserRoleFilter(e.target.value as 'all' | UserRole)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 focus:border-[#164081] focus:outline-none"
+                >
+                  <option value="all">All Roles</option>
+                  <option value="seeker">Job Seekers</option>
+                  <option value="employer">Employers</option>
+                  <option value="admin">Administrators</option>
+                </select>
+
+                <div className="inline-flex rounded-lg bg-slate-100 p-1 text-xs font-semibold">
+                  {(['all', 'pending', 'approved', 'suspended'] as const).map((statusKey) => (
+                    <button
+                      key={statusKey}
+                      type="button"
+                      onClick={() => setUserFilter(statusKey)}
+                      className={`rounded-md px-2.5 py-1 capitalize ${
+                        userFilter === statusKey
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {statusKey}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCreateError(null);
+                  setCreateUserOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61] whitespace-nowrap shrink-0"
+              >
+                <UserPlus className="h-4 w-4" />
+                Create User
+              </button>
+            </div>
+
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
                 <tr>
-                  <th className="px-5 py-3">Name &amp; Email</th>
+                  <th className="px-5 py-3">Name &amp; Contact</th>
                   <th className="px-5 py-3">Organization / TIN</th>
                   <th className="px-5 py-3">Role</th>
                   <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Action</th>
+                  <th className="px-5 py-3">Last Sign In</th>
+                  <th className="px-5 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredUsers.map((u) => (
-                  <tr key={u.email}>
-                    <td className="px-5 py-3">
-                      <div className="font-semibold text-slate-900">{u.fullName}</div>
-                      <div className="text-xs text-slate-500">
-                        {u.email} {u.phone ? `· ${u.phone}` : ''}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-xs text-slate-600">
-                      {u.companyName ? (
-                        <div>
-                          <div className="font-medium text-slate-800">{u.companyName}</div>
-                          {u.tinNumber && (
-                            <div className="font-mono text-[11px] text-slate-500">
-                              TIN: {u.tinNumber}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-xs font-semibold uppercase text-slate-700">
-                      {u.role}
-                    </td>
-                    <td className="px-5 py-3 text-xs font-semibold">
-                      <span
-                        className={
-                          u.status === 'approved'
-                            ? 'text-emerald-700'
-                            : u.status === 'pending'
-                            ? 'text-amber-700'
-                            : 'text-rose-700'
-                        }
-                      >
-                        {u.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3">
-                      {u.email === 'admin@tatari.et' ? (
-                        <span className="text-xs text-slate-400">Primary Admin</span>
-                      ) : u.status === 'approved' ? (
-                        <button
-                          type="button"
-                          onClick={() => onSetUserStatus(u.email, 'suspended')}
-                          className="rounded-lg border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                        >
-                          Suspend
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onSetUserStatus(u.email, 'approved')}
-                          className="rounded-lg bg-[#0F766E] px-3 py-1 text-xs font-semibold text-white hover:bg-[#0D625C]"
-                        >
-                          {u.status === 'pending' ? 'Approve Account' : 'Reactivate'}
-                        </button>
-                      )}
+                {filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8 text-center text-xs text-slate-500">
+                      No user accounts match the current search or filter.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredUsers.map((u) => (
+                    <tr key={u.email} className="hover:bg-slate-50/70">
+                      <td className="px-5 py-3">
+                        <div className="font-semibold text-slate-900">{u.fullName}</div>
+                        <div className="text-xs text-slate-500">
+                          {u.email} {u.phone ? `· ${u.phone}` : ''}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-xs text-slate-600">
+                        {u.companyName ? (
+                          <div>
+                            <div className="font-medium text-slate-800">{u.companyName}</div>
+                            {u.tinNumber && (
+                              <div className="font-mono text-[11px] text-slate-500">
+                                TIN: {u.tinNumber}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-xs font-semibold uppercase text-slate-700">
+                        {u.role}
+                      </td>
+                      <td className="px-5 py-3 text-xs font-semibold">
+                        <span
+                          className={
+                            u.status === 'approved'
+                              ? 'text-emerald-700'
+                              : u.status === 'pending'
+                              ? 'text-amber-700'
+                              : 'text-rose-700'
+                          }
+                        >
+                          {u.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-xs text-slate-500 tabular-nums">
+                        {u.lastLoginAt
+                          ? new Date(u.lastLoginAt).toLocaleDateString()
+                          : 'Never signed in'}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {u.email === 'admin@tatari.et' ? (
+                            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                              Primary Admin
+                            </span>
+                          ) : (
+                            <>
+                              {u.status === 'pending' && (
+                                <button
+                                  type="button"
+                                  onClick={() => onSetUserStatus(u.email, 'approved')}
+                                  className="rounded-lg bg-[#0F766E] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#0D625C]"
+                                >
+                                  Approve Account
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => openManageModal(u)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                              >
+                                <UserCog className="h-3.5 w-3.5 text-[#164081]" />
+                                Manage
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
             <div className="border-b border-slate-200 px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600">
-              Payment &amp; Moderation Audit Ledger
+              Payment, User Governance &amp; Security Audit Ledger
             </div>
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
@@ -536,6 +726,393 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
             </table>
           </div>
         </section>
+      )}
+
+      {/* Admin Create User Modal */}
+      {createUserOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Create verified user account"
+        >
+          <form
+            onSubmit={handleCreateUserSubmit}
+            className="max-h-[92vh] w-full max-w-lg space-y-3.5 overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+          >
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <div>
+                <h2 className="font-display text-lg font-bold text-slate-900">
+                  Create Verified User Account
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Directly provision a Job Seeker, Employer, or Administrator account.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close create user modal"
+                onClick={() => setCreateUserOpen(false)}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {createError && (
+              <div
+                role="alert"
+                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800"
+              >
+                {createError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-semibold text-slate-700">
+                Role *
+                <select
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value as UserRole)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                >
+                  <option value="seeker">Job Seeker</option>
+                  <option value="employer">Employer</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Initial Status *
+                <select
+                  value={newStatus}
+                  onChange={(e) => setNewStatus(e.target.value as AccountStatus)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                >
+                  <option value="approved">Approved</option>
+                  <option value="pending">Pending Verification</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="block text-xs font-semibold text-slate-700">
+              Full Name *
+              <input
+                type="text"
+                required
+                value={newFullName}
+                onChange={(e) => setNewFullName(e.target.value)}
+                placeholder="e.g. Mekdes Alemu"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              />
+            </label>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-semibold text-slate-700">
+                Email Address *
+                <input
+                  type="email"
+                  required
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="user@company.et"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Phone Number *
+                <input
+                  type="text"
+                  required
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                />
+              </label>
+            </div>
+
+            {newRole === 'employer' && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Company Name *
+                  <input
+                    type="text"
+                    required
+                    value={newCompanyName}
+                    onChange={(e) => setNewCompanyName(e.target.value)}
+                    placeholder="e.g. Habesha Bank S.C."
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-slate-700">
+                  Business TIN *
+                  <input
+                    type="text"
+                    required
+                    value={newTinNumber}
+                    onChange={(e) => setNewTinNumber(e.target.value)}
+                    placeholder="e.g. 0011223344"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900"
+                  />
+                </label>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-semibold text-slate-700">
+                Password *
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min 8 chars + number"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Confirm Password *
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={newConfirmPassword}
+                  onChange={(e) => setNewConfirmPassword(e.target.value)}
+                  placeholder="Re-enter password"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2.5 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => setCreateUserOpen(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
+              >
+                Create User Account
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Admin Manage User Account Modal */}
+      {managedUser && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Manage ${managedUser.fullName}`}
+        >
+          <div className="max-h-[92vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <div>
+                <p className="text-xs font-semibold text-[#164081]">User Security Governance</p>
+                <h2 className="font-display text-lg font-bold text-slate-900">
+                  {managedUser.fullName}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  {managedUser.email} {managedUser.phone ? `· ${managedUser.phone}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close manage user modal"
+                onClick={() => setManagedUserEmail(null)}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {manageFeedback && (
+              <div
+                role="status"
+                className={`rounded-lg border px-3 py-2 text-xs font-medium ${
+                  manageFeedback.isError
+                    ? 'border-rose-200 bg-rose-50 text-rose-800'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                }`}
+              >
+                {manageFeedback.text}
+              </div>
+            )}
+
+            {/* User Activity & Organization Summary */}
+            <div className="grid grid-cols-3 gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-center text-xs">
+              <div>
+                <div className="font-mono text-base font-bold text-slate-900">
+                  {
+                    applications.filter(
+                      (a) => a.applicantEmail.toLowerCase() === managedUser.email.toLowerCase()
+                    ).length
+                  }
+                </div>
+                <div className="text-[11px] text-slate-500">Applications</div>
+              </div>
+              <div>
+                <div className="font-mono text-base font-bold text-slate-900">
+                  {
+                    jobs.filter(
+                      (j) => j.employerEmail.toLowerCase() === managedUser.email.toLowerCase()
+                    ).length
+                  }
+                </div>
+                <div className="text-[11px] text-slate-500">Jobs Posted</div>
+              </div>
+              <div>
+                <div className="font-mono text-base font-bold text-slate-900">
+                  {
+                    orders.filter(
+                      (o) => o.buyerEmail.toLowerCase() === managedUser.email.toLowerCase()
+                    ).length
+                  }
+                </div>
+                <div className="text-[11px] text-slate-500">Store Orders</div>
+              </div>
+            </div>
+
+            {managedUser.companyName && (
+              <div className="rounded-lg border border-slate-200 px-3.5 py-2.5 text-xs text-slate-700">
+                Organization: <strong>{managedUser.companyName}</strong> · TIN:{' '}
+                <strong className="font-mono">{managedUser.tinNumber || 'N/A'}</strong>
+              </div>
+            )}
+
+            {/* Status & Role Controls */}
+            <div className="space-y-3 rounded-lg border border-slate-200 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs">
+                  <span className="font-semibold text-slate-700">Account Status: </span>
+                  <span
+                    className={`font-bold uppercase ${
+                      managedUser.status === 'approved'
+                        ? 'text-emerald-700'
+                        : managedUser.status === 'pending'
+                        ? 'text-amber-700'
+                        : 'text-rose-700'
+                    }`}
+                  >
+                    {managedUser.status}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  {managedUser.status !== 'approved' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSetUserStatus(managedUser.email, 'approved');
+                        setManageFeedback({ text: 'Account status set to Approved.' });
+                      }}
+                      className="rounded-lg bg-[#0F766E] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0D625C]"
+                    >
+                      Approve / Reactivate
+                    </button>
+                  )}
+                  {managedUser.status !== 'suspended' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSetUserStatus(managedUser.email, 'suspended');
+                        setManageFeedback({ text: 'Account suspended immediately.' });
+                      }}
+                      className="rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                    >
+                      Suspend Account
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+                <label className="flex-1 text-xs font-semibold text-slate-700">
+                  Assigned Role
+                  <select
+                    value={manageRole}
+                    onChange={(e) => setManageRole(e.target.value as UserRole)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900"
+                  >
+                    <option value="seeker">Job Seeker</option>
+                    <option value="employer">Employer</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const err = onUpdateUserRole(managedUser.email, manageRole);
+                    if (err) {
+                      setManageFeedback({ text: err, isError: true });
+                    } else {
+                      setManageFeedback({ text: `Role updated to ${manageRole.toUpperCase()}.` });
+                    }
+                  }}
+                  className="rounded-lg border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                >
+                  Update Role
+                </button>
+              </div>
+            </div>
+
+            {/* Admin Password Reset Form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const err = onResetUserPassword(managedUser.email, resetPwd, resetConfirmPwd);
+                if (err) {
+                  setManageFeedback({ text: err, isError: true });
+                  return;
+                }
+                setResetPwd('');
+                setResetConfirmPwd('');
+                setManageFeedback({
+                  text: `Password securely reset for ${managedUser.email}.`,
+                });
+              }}
+              className="space-y-3 rounded-lg border border-slate-200 p-4"
+            >
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                <KeyRound className="h-3.5 w-3.5 text-[#164081]" />
+                <span>Admin Password Reset</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={resetPwd}
+                  onChange={(e) => setResetPwd(e.target.value)}
+                  placeholder="New password (8+ chars + #)"
+                  aria-label="New password for user"
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900"
+                />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={resetConfirmPwd}
+                  onChange={(e) => setResetConfirmPwd(e.target.value)}
+                  placeholder="Confirm new password"
+                  aria-label="Confirm new password for user"
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900"
+                />
+              </div>
+              <button
+                type="submit"
+                className="rounded-lg bg-[#164081] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#102E61]"
+              >
+                Reset User Password
+              </button>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Reject Reason Modal */}
