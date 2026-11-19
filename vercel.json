@@ -3,6 +3,8 @@
   "trailingSlash": false,
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index?__path=$1" },
+    { "source": "/sitemap.xml", "destination": "/api/index?__path=sitemap.xml" },
+    { "source": "/robots.txt", "destination": "/api/index?__path=robots.txt" },
     { "source": "/((?!api/|sitemap\\.xml|robots\\.txt).*)", "destination": "/index.html" }
   ]
 }

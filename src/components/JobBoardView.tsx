@@ -77,6 +77,7 @@ export function JobBoardView({
   const [expiringOnly, setExpiringOnly] = useState(false);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [page, setPage] = useState(1);
+  const [retryCount, setRetryCount] = useState(0);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -136,7 +137,7 @@ export function JobBoardView({
     return () => {
       active = false;
     };
-  }, [q, company, location, originFilter, categoryId, employmentType, salaryMin, datePosted, sourceId, featuredOnly, expiringOnly, page]);
+  }, [q, company, location, originFilter, categoryId, employmentType, salaryMin, datePosted, sourceId, featuredOnly, expiringOnly, page, retryCount]);
 
   function handleSearchSubmit(e: FormEvent) {
     e.preventDefault();
@@ -489,7 +490,7 @@ export function JobBoardView({
           <p className="text-sm font-semibold text-red-700">{error}</p>
           <button
             type="button"
-            onClick={() => setPage(1)}
+            onClick={() => setRetryCount((c) => c + 1)}
             className="px-4 py-2 text-xs font-semibold text-white bg-[#164081] rounded-lg"
           >
             Retry
