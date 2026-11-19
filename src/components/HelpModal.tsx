@@ -152,9 +152,10 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700 shrink-0" />
                   <div>
-                    <strong className="text-slate-900">3. Save Jobs &amp; Track Stages:</strong>{' '}
-                    Once signed in, save vacancies for later and track employer pipeline updates (
-                    <em>Submitted → Under Review → Shortlisted → Interview → Hired</em>) in{' '}
+                    <strong className="text-slate-900">3. Manage Profile, Saved Jobs &amp; Stages:</strong>{' '}
+                    Click your account name in the top bar anytime to open{' '}
+                    <strong>My Profile</strong>—update your headline and default CV link, rotate your
+                    password, or delete your account, and track stages in{' '}
                     <strong>Saved &amp; Orders</strong>.
                   </div>
                 </li>
@@ -176,7 +177,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                   }}
                   className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                 >
-                  Sign In / Change Password
+                  Sign In / Manage Profile
                 </button>
               </div>
             </div>
@@ -276,10 +277,10 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700 shrink-0" />
                   <div>
-                    <strong className="text-slate-900">3. Download Once Approved:</strong> As soon
-                    as the Administrator approves your receipt, the button changes to{' '}
-                    <strong>Download Material</strong> in both the Digital Store and{' '}
-                    <strong>Saved &amp; Orders</strong>.
+                    <strong className="text-slate-900">3. Download &amp; Rate Once Approved:</strong>{' '}
+                    Once the Administrator approves your receipt, download the material, download
+                    your VAT invoice, and publish a <strong>Verified Buyer Review</strong> on the
+                    product card.
                   </div>
                 </li>
               </ol>
@@ -327,10 +328,11 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700 shrink-0" />
                   <div>
-                    <strong className="text-slate-900">Secure User Management:</strong> Filter users
-                    by keyword, role, or status; create verified accounts via{' '}
-                    <strong>+ Create User</strong>; or click <strong>Manage</strong> on any row to
-                    approve, suspend, change role, or reset passwords with full audit trail logging.
+                    <strong className="text-slate-900">Full User CRUD Governance:</strong> Filter
+                    users by keyword, role, or status; create verified accounts via{' '}
+                    <strong>Create User</strong>; or click <strong>Manage</strong> to read details,
+                    update name/phone/company/TIN/role/status, reset passwords, or delete accounts
+                    with complete audit logging.
                   </div>
                 </li>
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">

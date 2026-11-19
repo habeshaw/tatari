@@ -8,7 +8,9 @@ import type {
   PaymentMethod,
   PaymentReceipt,
   ProductFilterCriteria,
+  ProductReview,
   RemoteType,
+  UserProfile,
 } from '../types/domain';
 
 export interface JobPostingPackage {
@@ -205,12 +207,26 @@ export function filterJobs(
   });
 }
 
+export function getProductRatingSummary(
+  reviews: ProductReview[],
+  productId: string
+): { average: number; count: number } {
+  const matching = reviews.filter((r) => r.productId === productId);
+  if (matching.length === 0) return { average: 0, count: 0 };
+  const total = matching.reduce((sum, r) => sum + Number(r.rating || 0), 0);
+  return {
+    average: Math.round((total / matching.length) * 10) / 10,
+    count: matching.length,
+  };
+}
+
 export function filterProducts(
   products: DigitalProduct[],
-  criteria: ProductFilterCriteria
+  criteria: ProductFilterCriteria,
+  reviews: ProductReview[] = []
 ): DigitalProduct[] {
   const query = criteria.query.trim().toLowerCase();
-  return products.filter((product) => {
+  const filtered = products.filter((product) => {
     if (!product.active) return false;
     if (query) {
       const text = [
@@ -232,6 +248,225 @@ export function filterProducts(
     }
     return true;
   });
+
+  const sortBy = criteria.sortBy || 'newest';
+  return [...filtered].sort((a, b) => {
+    if (sortBy === 'price_asc') return a.priceEtb - b.priceEtb;
+    if (sortBy === 'price_desc') return b.priceEtb - a.priceEtb;
+    if (sortBy === 'top_rated') {
+      const rA = getProductRatingSummary(reviews, a.id);
+      const rB = getProductRatingSummary(reviews, b.id);
+      if (rB.average !== rA.average) return rB.average - rA.average;
+      if (rB.count !== rA.count) return rB.count - rA.count;
+    }
+    return (new Date(b.createdAt).getTime() || 0) - (new Date(a.createdAt).getTime() || 0);
+  });
+}
+
+export function canUserReviewProduct(
+  orders: MaterialOrder[],
+  userEmail: string,
+  productId: string
+): boolean {
+  const cleanEmail = userEmail.trim().toLowerCase();
+  if (!cleanEmail) return false;
+  return orders.some(
+    (o) =>
+      o.productId === productId &&
+      o.buyerEmail.toLowerCase() === cleanEmail &&
+      canDownloadMaterial(o)
+  );
+}
+
+export function upsertProductReview(
+  reviews: ProductReview[],
+  orders: MaterialOrder[],
+  actor: UserProfile | null,
+  input: { productId: string; rating: number; comment: string },
+  nowIso: string = new Date().toISOString()
+): ProductReview[] {
+  if (!actor || actor.status === 'suspended') {
+    throw new Error('Sign in with an active account to submit a product review.');
+  }
+  if (!canUserReviewProduct(orders, actor.email, input.productId)) {
+    throw new Error('Only verified buyers who have unlocked this material can submit a review.');
+  }
+  const rating = Math.round(Number(input.rating));
+  if (rating < 1 || rating > 5) {
+    throw new Error('Rating must be between 1 and 5 stars.');
+  }
+  const comment = input.comment.trim();
+  if (comment.length < 3) {
+    throw new Error('Please write a short review (at least 3 characters).');
+  }
+
+  const existing = reviews.find(
+    (r) =>
+      r.productId === input.productId &&
+      r.reviewerEmail.toLowerCase() === actor.email.toLowerCase()
+  );
+  if (existing) {
+    return reviews.map((r) =>
+      r.id === existing.id
+        ? { ...r, rating, comment, reviewerName: actor.fullName, createdAt: nowIso }
+        : r
+    );
+  }
+
+  const created: ProductReview = {
+    id: `rev-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    productId: input.productId,
+    reviewerEmail: actor.email.toLowerCase(),
+    reviewerName: actor.fullName,
+    rating,
+    comment,
+    createdAt: nowIso,
+  };
+  return [created, ...reviews];
+}
+
+export function updateDigitalProduct(
+  products: DigitalProduct[],
+  actor: UserProfile | null,
+  productId: string,
+  updates: Partial<
+    Pick<
+      DigitalProduct,
+      | 'titleEn'
+      | 'titleAm'
+      | 'category'
+      | 'priceEtb'
+      | 'fileFormat'
+      | 'fileSize'
+      | 'version'
+      | 'descriptionEn'
+      | 'includedFiles'
+      | 'active'
+    >
+  >
+): DigitalProduct[] {
+  if (!actor || actor.role !== 'admin' || actor.status !== 'approved') {
+    throw new Error('Only an approved Administrator can update digital store materials.');
+  }
+  const target = products.find((p) => p.id === productId);
+  if (!target) {
+    throw new Error('Digital material not found.');
+  }
+  if (updates.titleEn !== undefined && updates.titleEn.trim().length < 3) {
+    throw new Error('Material title must be at least 3 characters.');
+  }
+  if (updates.priceEtb !== undefined && Number(updates.priceEtb) < 50) {
+    throw new Error('License price must be at least ETB 50.');
+  }
+
+  return products.map((p) =>
+    p.id === productId
+      ? {
+          ...p,
+          ...updates,
+          titleEn: updates.titleEn !== undefined ? updates.titleEn.trim() : p.titleEn,
+          descriptionEn:
+            updates.descriptionEn !== undefined ? updates.descriptionEn.trim() : p.descriptionEn,
+          priceEtb: updates.priceEtb !== undefined ? Number(updates.priceEtb) : p.priceEtb,
+        }
+      : p
+  );
+}
+
+export function deleteDigitalProduct(
+  products: DigitalProduct[],
+  actor: UserProfile | null,
+  productId: string
+): DigitalProduct[] {
+  if (!actor || actor.role !== 'admin' || actor.status !== 'approved') {
+    throw new Error('Only an approved Administrator can delete digital store materials.');
+  }
+  if (!products.some((p) => p.id === productId)) {
+    throw new Error('Digital material not found.');
+  }
+  return products.filter((p) => p.id !== productId);
+}
+
+export function updateEmployerJobListing(
+  jobs: JobListing[],
+  actor: UserProfile | null,
+  jobId: string,
+  updates: {
+    titleEn: string;
+    location: string;
+    salaryMin: number;
+    salaryMax: number;
+    deadline: string;
+    descriptionEn: string;
+  }
+): JobListing[] {
+  if (!actor || actor.status !== 'approved' || (actor.role !== 'employer' && actor.role !== 'admin')) {
+    throw new Error('Verified Employer or Administrator authorization required.');
+  }
+  const target = jobs.find((j) => j.id === jobId);
+  if (!target) {
+    throw new Error('Job listing not found.');
+  }
+  if (
+    actor.role !== 'admin' &&
+    target.employerEmail.toLowerCase() !== actor.email.toLowerCase()
+  ) {
+    throw new Error('You can only edit your own job listings.');
+  }
+  if (updates.titleEn.trim().length < 3) {
+    throw new Error('Job title must be at least 3 characters.');
+  }
+  if (updates.location.trim().length < 2) {
+    throw new Error('Location is required.');
+  }
+  if (updates.salaryMin < 0 || updates.salaryMax < updates.salaryMin) {
+    throw new Error('Max salary must be greater than or equal to min salary.');
+  }
+  if (updates.descriptionEn.trim().length < 15) {
+    throw new Error('Job description must be at least 15 characters.');
+  }
+
+  const salaryDisplay =
+    updates.salaryMax > updates.salaryMin
+      ? `${updates.salaryMin.toLocaleString('en-US')} – ${updates.salaryMax.toLocaleString('en-US')} ETB/mo`
+      : `${updates.salaryMin.toLocaleString('en-US')} ETB/mo`;
+
+  return jobs.map((j) =>
+    j.id === jobId
+      ? {
+          ...j,
+          titleEn: updates.titleEn.trim(),
+          location: updates.location.trim(),
+          salaryMin: Number(updates.salaryMin),
+          salaryMax: Number(updates.salaryMax),
+          salaryDisplay,
+          deadline: updates.deadline,
+          descriptionEn: updates.descriptionEn.trim(),
+          summaryEn: updates.descriptionEn.trim().slice(0, 140),
+        }
+      : j
+  );
+}
+
+export function deleteEmployerJobListing(
+  jobs: JobListing[],
+  actor: UserProfile | null,
+  jobId: string
+): JobListing[] {
+  if (!actor || actor.status !== 'approved' || (actor.role !== 'employer' && actor.role !== 'admin')) {
+    throw new Error('Verified Employer or Administrator authorization required.');
+  }
+  const target = jobs.find((j) => j.id === jobId);
+  if (!target) {
+    throw new Error('Job listing not found.');
+  }
+  if (
+    actor.role !== 'admin' &&
+    target.employerEmail.toLowerCase() !== actor.email.toLowerCase()
+  ) {
+    throw new Error('You can only delete your own job listings.');
+  }
+  return jobs.filter((j) => j.id !== jobId);
 }
 
 export interface PaymentSubmissionInput {

@@ -18,6 +18,9 @@ import {
 } from './components/Modals';
 import { MyActivityView } from './components/MyActivityView';
 import {
+  deleteJobFromSupabase,
+  deleteProductFromSupabase,
+  deleteUserFromSupabase,
   getInitialPlatformState,
   persistPlatformState,
   pushApplicationToSupabase,
@@ -31,15 +34,21 @@ import {
 } from './lib/repository';
 import {
   adminCreateUserAccount,
+  adminDeleteUserAccount,
   adminResetUserPassword,
   adminUpdateAccountStatus,
+  adminUpdateUserAccount,
   adminUpdateUserRole,
   authenticateCredentials,
   canAccessActivity,
   changeOwnPassword,
+  deleteOwnAccount,
   registerSeekerAndCreateApplication,
   registerVerifiedRoleAccount,
+  updateOwnProfile,
   type AdminCreateUserInput,
+  type AdminUserUpdateInput,
+  type SelfProfileUpdateInput,
 } from './lib/security';
 import {
   adminApprovePaymentReceipt,
@@ -49,7 +58,12 @@ import {
   canDownloadMaterial,
   createJobPostingWithPayment,
   createMaterialOrderWithPayment,
+  deleteDigitalProduct,
+  deleteEmployerJobListing,
   isDuplicateTransactionRef,
+  updateDigitalProduct,
+  updateEmployerJobListing,
+  upsertProductReview,
   type JobDraftInput,
   type PaymentSubmissionInput,
 } from './lib/storeLogic';
@@ -68,7 +82,7 @@ import type {
 
 interface AuthModalConfig {
   open: boolean;
-  mode: 'signin' | 'signup' | 'password';
+  mode: 'profile' | 'signin' | 'signup' | 'password';
   role: 'seeker' | 'employer';
   notice: string | null;
 }
@@ -89,6 +103,7 @@ export default function App() {
     notice: null,
   });
   const [addProductModalOpen, setAddProductModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<DigitalProduct | null>(null);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [failedLoginCount, setFailedLoginCount] = useState(0);
   const [lockoutUntilMs, setLockoutUntilMs] = useState(0);
@@ -153,7 +168,7 @@ export default function App() {
   const lockoutSecondsRemaining = Math.max(0, Math.ceil((lockoutUntilMs - nowMs) / 1000));
 
   const openAuthModal = (options?: {
-    mode?: 'signin' | 'signup' | 'password';
+    mode?: 'profile' | 'signin' | 'signup' | 'password';
     role?: 'seeker' | 'employer';
     notice?: string;
   }) => {
@@ -629,12 +644,160 @@ export default function App() {
       active: true,
       createdAt: new Date().toISOString(),
     };
+    const logEntry = {
+      id: `log-${Date.now()}-addprod`,
+      userEmail: currentUser.email,
+      actionType: 'ADMIN_CREATE_PRODUCT',
+      details: `Published digital material "${newProd.titleEn}" (ETB ${newProd.priceEtb}).`,
+      createdAt: new Date().toISOString(),
+    };
     void pushProductToSupabase(newProd);
     setState((prev) => ({
       ...prev,
       products: [newProd, ...prev.products],
+      logs: [logEntry, ...prev.logs],
     }));
     showToast(`"${newProd.titleEn}" published to the Digital Store.`);
+  };
+
+  const handleUpdateProduct = (
+    productId: string,
+    updates: Omit<DigitalProduct, 'id' | 'sellerEmail' | 'active' | 'createdAt'>
+  ) => {
+    try {
+      const nextProducts = updateDigitalProduct(state.products, currentUser, productId, updates);
+      const updated = nextProducts.find((p) => p.id === productId);
+      const logEntry = {
+        id: `log-${Date.now()}-updprod`,
+        userEmail: currentUser?.email || 'admin@tatari.et',
+        actionType: 'ADMIN_UPDATE_PRODUCT',
+        details: `Updated digital material "${updates.titleEn}" (ETB ${updates.priceEtb}).`,
+        createdAt: new Date().toISOString(),
+      };
+      if (updated) {
+        void pushProductToSupabase(updated);
+      }
+      setState((prev) => ({
+        ...prev,
+        products: nextProducts,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`"${updates.titleEn}" updated successfully.`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to update digital material.', true);
+    }
+  };
+
+  const handleDeleteProduct = (productId: string) => {
+    try {
+      const existing = state.products.find((p) => p.id === productId);
+      const nextProducts = deleteDigitalProduct(state.products, currentUser, productId);
+      const logEntry = {
+        id: `log-${Date.now()}-delprod`,
+        userEmail: currentUser?.email || 'admin@tatari.et',
+        actionType: 'ADMIN_DELETE_PRODUCT',
+        details: `Deleted digital material "${existing?.titleEn || productId}".`,
+        createdAt: new Date().toISOString(),
+      };
+      void deleteProductFromSupabase(productId);
+      setState((prev) => ({
+        ...prev,
+        products: nextProducts,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`Digital material "${existing?.titleEn || productId}" deleted.`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to delete digital material.', true);
+    }
+  };
+
+  const handleSubmitProductReview = (
+    productId: string,
+    rating: number,
+    comment: string
+  ): string | null => {
+    try {
+      const nextReviews = upsertProductReview(state.reviews, state.orders, currentUser, {
+        productId,
+        rating,
+        comment,
+      });
+      const logEntry = {
+        id: `log-${Date.now()}-rev`,
+        userEmail: currentUser?.email || 'buyer',
+        actionType: 'STORE_PRODUCT_REVIEW',
+        details: `Published ${rating}-star verified buyer review on product ${productId}.`,
+        createdAt: new Date().toISOString(),
+      };
+      setState((prev) => ({
+        ...prev,
+        reviews: nextReviews,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast('Thank you! Your verified buyer review is live.');
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to publish review.';
+    }
+  };
+
+  const handleUpdateEmployerJob = (
+    jobId: string,
+    updates: {
+      titleEn: string;
+      location: string;
+      salaryMin: number;
+      salaryMax: number;
+      deadline: string;
+      descriptionEn: string;
+    }
+  ): string | null => {
+    try {
+      const nextJobs = updateEmployerJobListing(state.jobs, currentUser, jobId, updates);
+      const updated = nextJobs.find((j) => j.id === jobId);
+      const logEntry = {
+        id: `log-${Date.now()}-updjob`,
+        userEmail: currentUser?.email || 'employer',
+        actionType: 'EMPLOYER_UPDATE_JOB',
+        details: `Updated job listing "${updates.titleEn}" (${updates.location}).`,
+        createdAt: new Date().toISOString(),
+      };
+      if (updated) {
+        void pushJobToSupabase(updated);
+      }
+      setState((prev) => ({
+        ...prev,
+        jobs: nextJobs,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`Job listing "${updates.titleEn}" updated.`);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to update job listing.';
+    }
+  };
+
+  const handleDeleteEmployerJob = (jobId: string) => {
+    try {
+      const existing = state.jobs.find((j) => j.id === jobId);
+      const nextJobs = deleteEmployerJobListing(state.jobs, currentUser, jobId);
+      const logEntry = {
+        id: `log-${Date.now()}-deljob`,
+        userEmail: currentUser?.email || 'employer',
+        actionType: 'EMPLOYER_DELETE_JOB',
+        details: `Removed job listing "${existing?.titleEn || jobId}".`,
+        createdAt: new Date().toISOString(),
+      };
+      void deleteJobFromSupabase(jobId);
+      setState((prev) => ({
+        ...prev,
+        jobs: nextJobs,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`Job listing "${existing?.titleEn || jobId}" removed.`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to delete job listing.', true);
+    }
   };
 
   const handleSetUserStatus = (email: string, status: AccountStatus) => {
@@ -753,6 +916,127 @@ export default function App() {
       return null;
     } catch (err) {
       return err instanceof Error ? err.message : 'Unable to reset user password.';
+    }
+  };
+
+  const handleAdminUpdateUser = (
+    email: string,
+    updates: AdminUserUpdateInput
+  ): string | null => {
+    try {
+      const nextUsers = adminUpdateUserAccount(state.users, currentUser, email, updates);
+      const updatedUser = nextUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      const logEntry = {
+        id: `log-${Date.now()}-uupd`,
+        userEmail: currentUser?.email || 'admin@tatari.et',
+        actionType: 'ADMIN_UPDATE_USER',
+        details: `Updated user ${email}: ${updates.fullName}, role=${updates.role.toUpperCase()}, status=${updates.status}.`,
+        createdAt: new Date().toISOString(),
+      };
+      if (updatedUser) {
+        void pushUserProfileAndAuditToSupabase(updatedUser, logEntry);
+      }
+      setState((prev) => ({
+        ...prev,
+        users: nextUsers,
+        currentUserEmail:
+          updates.status === 'suspended' &&
+          prev.currentUserEmail.toLowerCase() === email.toLowerCase()
+            ? ''
+            : prev.currentUserEmail,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`User account ${email} updated.`);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to update user account.';
+    }
+  };
+
+  const handleAdminDeleteUser = (email: string): string | null => {
+    try {
+      const nextUsers = adminDeleteUserAccount(state.users, currentUser, email);
+      const logEntry = {
+        id: `log-${Date.now()}-udel`,
+        userEmail: currentUser?.email || 'admin@tatari.et',
+        actionType: 'ADMIN_DELETE_USER',
+        details: `Administrator permanently deleted user account ${email}.`,
+        createdAt: new Date().toISOString(),
+      };
+      void deleteUserFromSupabase(email, logEntry);
+      setState((prev) => ({
+        ...prev,
+        users: nextUsers,
+        currentUserEmail:
+          prev.currentUserEmail.toLowerCase() === email.toLowerCase()
+            ? ''
+            : prev.currentUserEmail,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`User account ${email} permanently deleted.`);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to delete user account.';
+    }
+  };
+
+  const handleUpdateOwnProfile = (updates: SelfProfileUpdateInput): string | null => {
+    if (!currentUser) {
+      return 'You must be signed in to update your profile.';
+    }
+    try {
+      const nextUsers = updateOwnProfile(state.users, currentUser.email, updates);
+      const updatedUser = nextUsers.find(
+        (u) => u.email.toLowerCase() === currentUser.email.toLowerCase()
+      );
+      const logEntry = {
+        id: `log-${Date.now()}-selfupd`,
+        userEmail: currentUser.email,
+        actionType: 'USER_UPDATE_PROFILE',
+        details: `Updated own account profile (${updates.fullName}).`,
+        createdAt: new Date().toISOString(),
+      };
+      if (updatedUser) {
+        void pushUserProfileAndAuditToSupabase(updatedUser, logEntry);
+      }
+      setState((prev) => ({
+        ...prev,
+        users: nextUsers,
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast('Profile information updated.');
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to update profile.';
+    }
+  };
+
+  const handleDeleteOwnAccount = (currentPassword: string): string | null => {
+    if (!currentUser) {
+      return 'You must be signed in to delete your account.';
+    }
+    const targetEmail = currentUser.email;
+    try {
+      const nextUsers = deleteOwnAccount(state.users, targetEmail, currentPassword);
+      const logEntry = {
+        id: `log-${Date.now()}-selfdel`,
+        userEmail: targetEmail,
+        actionType: 'USER_DELETE_OWN_ACCOUNT',
+        details: `User permanently deleted their own account (${targetEmail}).`,
+        createdAt: new Date().toISOString(),
+      };
+      void deleteUserFromSupabase(targetEmail, logEntry);
+      setPendingProductAfterAuth(null);
+      setState((prev) => ({
+        ...prev,
+        users: nextUsers,
+        currentUserEmail: '',
+        logs: [logEntry, ...prev.logs],
+      }));
+      showToast(`Account ${targetEmail} deleted permanently.`);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to delete account.';
     }
   };
 
@@ -964,7 +1248,7 @@ export default function App() {
         currentUser={currentUser}
         pendingApprovalCount={pendingApprovalCount}
         language={state.language}
-        onOpenAuth={() => openAuthModal({ mode: 'signin' })}
+        onOpenAuth={() => openAuthModal({ mode: currentUser ? 'profile' : 'signin' })}
         onOpenHelp={() => setHelpModalOpen(true)}
       />
 
@@ -987,10 +1271,12 @@ export default function App() {
           <DigitalStoreView
             products={state.products}
             orders={state.orders}
+            reviews={state.reviews}
             currentUserEmail={state.currentUserEmail}
             language={state.language}
             onBuyProduct={handleRequestBuyProduct}
             onDownloadMaterial={handleDownloadMaterial}
+            onSubmitProductReview={handleSubmitProductReview}
           />
         )}
 
@@ -1026,6 +1312,8 @@ export default function App() {
             applications={state.applications}
             receipts={state.receipts}
             onSubmitJobWithPayment={handleSubmitJobWithPayment}
+            onUpdateJob={handleUpdateEmployerJob}
+            onDeleteJob={handleDeleteEmployerJob}
             onUpdateApplicationStage={handleUpdateApplicationStage}
             onToggleJobActiveStatus={handleEmployerToggleJobPause}
             onDownloadInvoice={handleDownloadInvoice}
@@ -1047,9 +1335,19 @@ export default function App() {
             onRejectReceipt={handleRejectReceipt}
             onSetJobStatus={handleSetJobStatus}
             onToggleProductActive={handleToggleProductActive}
-            onOpenAddProduct={() => setAddProductModalOpen(true)}
+            onOpenAddProduct={() => {
+              setEditingProduct(null);
+              setAddProductModalOpen(true);
+            }}
+            onOpenEditProduct={(prod) => {
+              setEditingProduct(prod);
+              setAddProductModalOpen(true);
+            }}
+            onDeleteProduct={handleDeleteProduct}
             onSetUserStatus={handleSetUserStatus}
             onCreateUser={handleAdminCreateUser}
+            onUpdateUser={handleAdminUpdateUser}
+            onDeleteUser={handleAdminDeleteUser}
             onUpdateUserRole={handleAdminUpdateUserRole}
             onResetUserPassword={handleAdminResetUserPassword}
             onDownloadInvoice={handleDownloadInvoice}
@@ -1154,13 +1452,20 @@ export default function App() {
           onSignOut={handleSignOut}
           onRegister={handleRegister}
           onChangePassword={handleChangeOwnPassword}
+          onUpdateProfile={handleUpdateOwnProfile}
+          onDeleteOwnAccount={handleDeleteOwnAccount}
         />
       )}
 
       {addProductModalOpen && (
         <AddProductModal
-          onClose={() => setAddProductModalOpen(false)}
+          editingProduct={editingProduct}
+          onClose={() => {
+            setAddProductModalOpen(false);
+            setEditingProduct(null);
+          }}
           onAddProduct={handleAddProduct}
+          onUpdateProduct={handleUpdateProduct}
         />
       )}
 

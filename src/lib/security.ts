@@ -591,3 +591,220 @@ export function adminResetUserPassword(
   );
 }
 
+export function canManageUserRecord(
+  actor: UserProfile | null,
+  targetEmail: string,
+  action: 'read' | 'update' | 'delete'
+): { allowed: boolean; reason?: string } {
+  if (!actor) {
+    return { allowed: false, reason: 'Authentication is required.' };
+  }
+  if (actor.status === 'suspended') {
+    return { allowed: false, reason: 'Suspended accounts cannot perform account operations.' };
+  }
+  const cleanTarget = targetEmail.trim().toLowerCase();
+  const isSelf = actor.email.toLowerCase() === cleanTarget;
+  const isApprovedAdmin = actor.role === 'admin' && actor.status === 'approved';
+
+  if (action === 'delete' && cleanTarget === 'admin@tatari.et') {
+    return {
+      allowed: false,
+      reason: 'The primary System Administrator account cannot be deleted.',
+    };
+  }
+  if (isApprovedAdmin) {
+    if (action === 'delete' && isSelf) {
+      return {
+        allowed: false,
+        reason: 'You cannot delete your own active Administrator session.',
+      };
+    }
+    return { allowed: true };
+  }
+  if (isSelf) {
+    return { allowed: true };
+  }
+  return {
+    allowed: false,
+    reason: 'Unauthorized: you can only access or modify your own user profile.',
+  };
+}
+
+export interface SelfProfileUpdateInput {
+  fullName: string;
+  phone: string;
+  companyName?: string;
+  tinNumber?: string;
+  headline?: string;
+  defaultResumeUrl?: string;
+}
+
+export function updateOwnProfile(
+  users: UserProfile[],
+  actorEmail: string,
+  updates: SelfProfileUpdateInput,
+  nowIso: string = new Date().toISOString()
+): UserProfile[] {
+  const cleanActor = actorEmail.trim().toLowerCase();
+  const existing = users.find((u) => u.email.toLowerCase() === cleanActor);
+  if (!existing) {
+    throw new Error('Signed-in user account not found.');
+  }
+  if (existing.status === 'suspended') {
+    throw new Error('Suspended accounts cannot update profile information.');
+  }
+
+  const cleanName = updates.fullName.trim();
+  const cleanPhone = updates.phone.trim();
+  if (cleanName.length < 2) {
+    throw new Error('Full name must be at least 2 characters.');
+  }
+  if (cleanPhone.length < 6) {
+    throw new Error('A valid phone number is required.');
+  }
+
+  if (existing.role === 'employer') {
+    if (!updates.companyName || updates.companyName.trim().length < 2) {
+      throw new Error('Registered company or organization name is required for employers.');
+    }
+    if (!updates.tinNumber || updates.tinNumber.trim().length < 5) {
+      throw new Error('Business TIN / License number (min 5 characters) is required for employers.');
+    }
+  }
+
+  const cleanResume = updates.defaultResumeUrl?.trim();
+  if (cleanResume && !/^https?:\/\/\S+$/i.test(cleanResume)) {
+    throw new Error('Default CV / Resume URL must start with http:// or https://.');
+  }
+
+  return users.map((u) =>
+    u.email.toLowerCase() === cleanActor
+      ? {
+          ...u,
+          fullName: cleanName,
+          phone: cleanPhone,
+          companyName:
+            existing.role === 'employer' ? updates.companyName?.trim() : u.companyName,
+          tinNumber: existing.role === 'employer' ? updates.tinNumber?.trim() : u.tinNumber,
+          headline: updates.headline?.trim() || undefined,
+          defaultResumeUrl: cleanResume || undefined,
+          updatedAt: nowIso,
+        }
+      : u
+  );
+}
+
+export function deleteOwnAccount(
+  users: UserProfile[],
+  actorEmail: string,
+  currentPassword: string
+): UserProfile[] {
+  const cleanActor = actorEmail.trim().toLowerCase();
+  if (cleanActor === 'admin@tatari.et') {
+    throw new Error('The primary System Administrator account cannot be deleted.');
+  }
+  const existing = users.find((u) => u.email.toLowerCase() === cleanActor);
+  if (!existing) {
+    throw new Error('Signed-in account not found.');
+  }
+  if (!verifyUserPassword(existing, currentPassword)) {
+    throw new Error('Current password is incorrect. Account deletion aborted.');
+  }
+  return users.filter((u) => u.email.toLowerCase() !== cleanActor);
+}
+
+export interface AdminUserUpdateInput {
+  fullName: string;
+  phone: string;
+  companyName?: string;
+  tinNumber?: string;
+  headline?: string;
+  role: UserRole;
+  status: AccountStatus;
+}
+
+export function adminUpdateUserAccount(
+  users: UserProfile[],
+  actor: UserProfile | null,
+  targetEmail: string,
+  updates: AdminUserUpdateInput,
+  nowIso: string = new Date().toISOString()
+): UserProfile[] {
+  if (!actor || actor.role !== 'admin' || actor.status !== 'approved') {
+    throw new Error('Only an approved Administrator can update user accounts.');
+  }
+  const cleanTarget = targetEmail.trim().toLowerCase();
+  const target = users.find((u) => u.email.toLowerCase() === cleanTarget);
+  if (!target) {
+    throw new Error('Target user account not found.');
+  }
+  if (cleanTarget === 'admin@tatari.et' && (updates.role !== 'admin' || updates.status !== 'approved')) {
+    throw new Error('Primary Administrator role and approved status cannot be modified.');
+  }
+  if (cleanTarget === actor.email.toLowerCase() && (updates.role !== 'admin' || updates.status !== 'approved')) {
+    throw new Error('You cannot demote or suspend your own active Administrator session.');
+  }
+
+  const cleanName = updates.fullName.trim();
+  const cleanPhone = updates.phone.trim();
+  if (cleanName.length < 2) {
+    throw new Error('Full name must be at least 2 characters.');
+  }
+  if (cleanPhone.length < 6) {
+    throw new Error('A valid phone number is required.');
+  }
+  if (updates.role === 'employer') {
+    if (!updates.companyName || updates.companyName.trim().length < 2) {
+      throw new Error('Company name is required when role is set to Employer.');
+    }
+    if (!updates.tinNumber || updates.tinNumber.trim().length < 5) {
+      throw new Error('Business TIN (min 5 characters) is required when role is set to Employer.');
+    }
+  }
+
+  return users.map((u) =>
+    u.email.toLowerCase() === cleanTarget
+      ? {
+          ...u,
+          fullName: cleanName,
+          phone: cleanPhone,
+          companyName:
+            updates.role === 'employer'
+              ? updates.companyName?.trim()
+              : updates.companyName?.trim() || undefined,
+          tinNumber:
+            updates.role === 'employer'
+              ? updates.tinNumber?.trim()
+              : updates.tinNumber?.trim() || undefined,
+          headline: updates.headline?.trim() || undefined,
+          role: updates.role,
+          status: updates.status,
+          updatedAt: nowIso,
+        }
+      : u
+  );
+}
+
+export function adminDeleteUserAccount(
+  users: UserProfile[],
+  actor: UserProfile | null,
+  targetEmail: string
+): UserProfile[] {
+  if (!actor || actor.role !== 'admin' || actor.status !== 'approved') {
+    throw new Error('Only an approved Administrator can delete user accounts.');
+  }
+  const cleanTarget = targetEmail.trim().toLowerCase();
+  if (cleanTarget === 'admin@tatari.et') {
+    throw new Error('Primary Administrator account cannot be deleted.');
+  }
+  if (cleanTarget === actor.email.toLowerCase()) {
+    throw new Error('You cannot delete your own active Administrator session.');
+  }
+  const exists = users.some((u) => u.email.toLowerCase() === cleanTarget);
+  if (!exists) {
+    throw new Error('Target user account not found.');
+  }
+  return users.filter((u) => u.email.toLowerCase() !== cleanTarget);
+}
+
+

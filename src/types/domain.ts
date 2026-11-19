@@ -34,10 +34,13 @@ export interface UserProfile {
   companyName?: string;
   tinNumber?: string;
   phone?: string;
+  headline?: string;
+  defaultResumeUrl?: string;
   role: UserRole;
   status: AccountStatus;
   passwordHash: string;
   lastLoginAt?: string;
+  updatedAt?: string;
   createdAt: string;
 }
 
@@ -160,6 +163,18 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
+export interface ProductReview {
+  id: string;
+  productId: string;
+  reviewerEmail: string;
+  reviewerName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
+export type ProductSortOption = 'newest' | 'price_asc' | 'price_desc' | 'top_rated';
+
 export interface JobFilterCriteria {
   what: string;
   where: string;
@@ -174,4 +189,5 @@ export interface ProductFilterCriteria {
   query: string;
   category: string;
   maxPrice: number;
+  sortBy?: ProductSortOption;
 }

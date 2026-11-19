@@ -1,21 +1,41 @@
 import React, { useMemo, useState } from 'react';
-import { CheckCircle2, Clock, Download, FileText, Lock, Search, ShoppingBag } from 'lucide-react';
-import { canDownloadMaterial, filterProducts, formatCurrencyEtb } from '../lib/storeLogic';
+import {
+  CheckCircle2,
+  Clock,
+  Download,
+  FileText,
+  Lock,
+  Search,
+  ShoppingBag,
+  Star,
+} from 'lucide-react';
+import {
+  canDownloadMaterial,
+  canUserReviewProduct,
+  filterProducts,
+  formatCurrencyEtb,
+  formatRelativeDays,
+  getProductRatingSummary,
+} from '../lib/storeLogic';
 import { TRANSLATIONS } from '../lib/i18n';
 import type {
   DigitalProduct,
   Language,
   MaterialOrder,
   ProductFilterCriteria,
+  ProductReview,
+  ProductSortOption,
 } from '../types/domain';
 
 interface DigitalStoreViewProps {
   products: DigitalProduct[];
   orders: MaterialOrder[];
+  reviews: ProductReview[];
   currentUserEmail: string;
   language: Language;
   onBuyProduct: (product: DigitalProduct) => void;
   onDownloadMaterial: (product: DigitalProduct, order: MaterialOrder) => void;
+  onSubmitProductReview: (productId: string, rating: number, comment: string) => string | null;
 }
 
 const CATEGORIES = [
@@ -30,20 +50,31 @@ const CATEGORIES = [
 export const DigitalStoreView: React.FC<DigitalStoreViewProps> = ({
   products,
   orders,
+  reviews,
   currentUserEmail,
   language,
   onBuyProduct,
   onDownloadMaterial,
+  onSubmitProductReview,
 }) => {
   const t = TRANSLATIONS[language];
   const [criteria, setCriteria] = useState<ProductFilterCriteria>({
     query: '',
     category: 'all',
     maxPrice: 0,
+    sortBy: 'newest',
   });
   const [inspectedProduct, setInspectedProduct] = useState<DigitalProduct | null>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewFeedback, setReviewFeedback] = useState<{ text: string; isError?: boolean } | null>(
+    null
+  );
 
-  const filteredProducts = useMemo(() => filterProducts(products, criteria), [products, criteria]);
+  const filteredProducts = useMemo(
+    () => filterProducts(products, criteria, reviews),
+    [products, criteria, reviews]
+  );
 
   const getOrderForProduct = (productId: string): MaterialOrder | undefined => {
     const userOrders = orders.filter(
@@ -127,6 +158,23 @@ export const DigitalStoreView: React.FC<DigitalStoreViewProps> = ({
                 <option value={2000}>Under 2,000 ETB</option>
                 <option value={3000}>Under 3,000 ETB</option>
               </select>
+
+              <select
+                aria-label="Sort digital materials"
+                value={criteria.sortBy || 'newest'}
+                onChange={(e) =>
+                  setCriteria((prev) => ({
+                    ...prev,
+                    sortBy: e.target.value as ProductSortOption,
+                  }))
+                }
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 focus:border-[#164081] focus:outline-none"
+              >
+                <option value="newest">Sort: Newest</option>
+                <option value="price_asc">Price: Low to High</option>
+                <option value="price_desc">Price: High to Low</option>
+                <option value="top_rated">Sort: Top Rated</option>
+              </select>
             </div>
           </div>
         </div>
@@ -157,6 +205,7 @@ export const DigitalStoreView: React.FC<DigitalStoreViewProps> = ({
               const unlocked = canDownloadMaterial(order);
               const isPending = order?.status === 'pending_approval';
 
+              const ratingSummary = getProductRatingSummary(reviews, product.id);
               return (
                 <article
                   key={product.id}
@@ -165,7 +214,11 @@ export const DigitalStoreView: React.FC<DigitalStoreViewProps> = ({
                   {/* 4:3 Product Thumbnail with CSS fallback */}
                   <button
                     type="button"
-                    onClick={() => setInspectedProduct(product)}
+                    onClick={() => {
+                      setInspectedProduct(product);
+                      setReviewFeedback(null);
+                      setReviewComment('');
+                    }}
                     className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100 text-left focus-visible:outline-2 focus-visible:outline-[#164081]"
                   >
                     {product.imageUrl ? (
@@ -184,8 +237,16 @@ export const DigitalStoreView: React.FC<DigitalStoreViewProps> = ({
                   </button>
 
                   <div className="flex flex-1 flex-col p-5">
-                    <div className="text-xs font-medium text-slate-500">
-                      {product.category} · {product.fileFormat} · {product.version}
+                    <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-500">
+                      <span>
+                        {product.category} · {product.fileFormat} · {product.version}
+                      </span>
+                      {ratingSummary.count > 0 && (
+                        <span className="inline-flex items-center gap-1 font-semibold text-slate-700 tabular-nums">
+                          <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                          {ratingSummary.average.toFixed(1)} ({ratingSummary.count})
+                        </span>
+                      )}
                     </div>
 
                     <h2 className="mt-1.5 font-display text-base font-bold text-slate-900">
@@ -292,6 +353,122 @@ export const DigitalStoreView: React.FC<DigitalStoreViewProps> = ({
                 Administrator verifies receipt of payment, the download link unlocks permanently in
                 your Store and Saved &amp; Orders tabs.
               </div>
+
+              {/* Verified Buyer Reviews */}
+              {(() => {
+                const productReviews = reviews.filter((r) => r.productId === inspectedProduct.id);
+                const summary = getProductRatingSummary(reviews, inspectedProduct.id);
+                const eligibleBuyer = canUserReviewProduct(
+                  orders,
+                  currentUserEmail,
+                  inspectedProduct.id
+                );
+
+                return (
+                  <div className="space-y-3 border-t border-slate-200 pt-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-display text-sm font-bold text-slate-900">
+                        Verified Buyer Reviews ({summary.count})
+                      </h3>
+                      {summary.count > 0 && (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 tabular-nums">
+                          <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                          {summary.average.toFixed(1)} / 5.0
+                        </span>
+                      )}
+                    </div>
+
+                    {productReviews.length === 0 ? (
+                      <p className="text-xs text-slate-500">
+                        No verified buyer reviews yet. Purchased customers can rate this material
+                        after payment approval.
+                      </p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {productReviews.map((rev) => (
+                          <li
+                            key={rev.id}
+                            className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <strong className="text-slate-900">{rev.reviewerName}</strong>
+                              <span className="inline-flex items-center gap-0.5 font-mono text-amber-600">
+                                <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                                {rev.rating}.0 · {formatRelativeDays(rev.createdAt)}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-slate-700">{rev.comment}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {eligibleBuyer && (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const err = onSubmitProductReview(
+                            inspectedProduct.id,
+                            reviewRating,
+                            reviewComment
+                          );
+                          if (err) {
+                            setReviewFeedback({ text: err, isError: true });
+                            return;
+                          }
+                          setReviewComment('');
+                          setReviewFeedback({ text: 'Verified buyer review published.' });
+                        }}
+                        className="space-y-2.5 rounded-lg border border-blue-200 bg-[#F0F5FF] p-3 text-xs"
+                      >
+                        <div className="font-bold text-[#10243B]">
+                          Write a Verified Buyer Review
+                        </div>
+                        {reviewFeedback && (
+                          <div
+                            className={`font-medium ${
+                              reviewFeedback.isError ? 'text-rose-700' : 'text-emerald-700'
+                            }`}
+                          >
+                            {reviewFeedback.text}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="font-semibold text-slate-700">
+                            Rating:
+                            <select
+                              aria-label="Product rating stars"
+                              value={reviewRating}
+                              onChange={(e) => setReviewRating(Number(e.target.value))}
+                              className="ml-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                            >
+                              <option value={5}>5 Stars — Excellent</option>
+                              <option value={4}>4 Stars — Very Good</option>
+                              <option value={3}>3 Stars — Good</option>
+                              <option value={2}>2 Stars — Fair</option>
+                              <option value={1}>1 Star — Needs Work</option>
+                            </select>
+                          </label>
+                        </div>
+                        <textarea
+                          rows={2}
+                          required
+                          value={reviewComment}
+                          onChange={(e) => setReviewComment(e.target.value)}
+                          placeholder="Share how this digital toolkit helped your team..."
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-[#164081] focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          className="rounded-lg bg-[#164081] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#102E61]"
+                        >
+                          Publish Review
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="mt-6 flex items-center justify-between border-t border-slate-200 pt-4">

@@ -5,15 +5,21 @@ import {
   Download,
   FileText,
   KeyRound,
+  Pencil,
   Plus,
   Search,
   ShieldCheck,
+  Trash2,
   UserCog,
   UserPlus,
   X,
   XCircle,
 } from 'lucide-react';
-import { filterUsersForAdmin, type AdminCreateUserInput } from '../lib/security';
+import {
+  filterUsersForAdmin,
+  type AdminCreateUserInput,
+  type AdminUserUpdateInput,
+} from '../lib/security';
 import { formatCurrencyEtb, formatRelativeDays } from '../lib/storeLogic';
 import type {
   AccountStatus,
@@ -42,8 +48,12 @@ interface AdminConsoleViewProps {
   onSetJobStatus: (jobId: string, status: JobModerationStatus) => void;
   onToggleProductActive: (productId: string) => void;
   onOpenAddProduct: () => void;
+  onOpenEditProduct: (product: DigitalProduct) => void;
+  onDeleteProduct: (productId: string) => void;
   onSetUserStatus: (email: string, status: AccountStatus) => void;
   onCreateUser: (input: AdminCreateUserInput) => string | null;
+  onUpdateUser: (email: string, updates: AdminUserUpdateInput) => string | null;
+  onDeleteUser: (email: string) => string | null;
   onUpdateUserRole: (email: string, role: UserRole) => string | null;
   onResetUserPassword: (
     email: string,
@@ -69,9 +79,12 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   onSetJobStatus,
   onToggleProductActive,
   onOpenAddProduct,
+  onOpenEditProduct,
+  onDeleteProduct,
   onSetUserStatus,
   onCreateUser,
-  onUpdateUserRole,
+  onUpdateUser,
+  onDeleteUser,
   onResetUserPassword,
   onDownloadInvoice,
   onExportCsv,
@@ -100,8 +113,16 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   const [newConfirmPassword, setNewConfirmPassword] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Manage user modal state
+  // Manage user modal state (Full User Read + Update + Delete)
+  const [manageFullName, setManageFullName] = useState('');
+  const [managePhone, setManagePhone] = useState('');
+  const [manageCompanyName, setManageCompanyName] = useState('');
+  const [manageTinNumber, setManageTinNumber] = useState('');
+  const [manageHeadline, setManageHeadline] = useState('');
   const [manageRole, setManageRole] = useState<UserRole>('seeker');
+  const [manageStatus, setManageStatus] = useState<AccountStatus>('approved');
+  const [confirmDeleteUserEmail, setConfirmDeleteUserEmail] = useState<string | null>(null);
+  const [confirmDeleteProductId, setConfirmDeleteProductId] = useState<string | null>(null);
   const [resetPwd, setResetPwd] = useState('');
   const [resetConfirmPwd, setResetConfirmPwd] = useState('');
   const [manageFeedback, setManageFeedback] = useState<{ text: string; isError?: boolean } | null>(
@@ -168,7 +189,14 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
 
   const openManageModal = (u: UserProfile) => {
     setManagedUserEmail(u.email);
+    setManageFullName(u.fullName);
+    setManagePhone(u.phone || '+251911');
+    setManageCompanyName(u.companyName || '');
+    setManageTinNumber(u.tinNumber || '');
+    setManageHeadline(u.headline || '');
     setManageRole(u.role);
+    setManageStatus(u.status);
+    setConfirmDeleteUserEmail(null);
     setResetPwd('');
     setResetConfirmPwd('');
     setManageFeedback(null);
@@ -518,6 +546,7 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
                   <th className="px-5 py-3.5">Category &amp; Format</th>
                   <th className="px-5 py-3.5">Price</th>
                   <th className="px-5 py-3.5">Availability</th>
+                  <th className="px-5 py-3.5">CRUD Controls</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -542,6 +571,48 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
                       >
                         {prod.active ? 'Active in Store' : 'Hidden'}
                       </button>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onOpenEditProduct(prod)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          <Pencil className="h-3 w-3 text-[#164081]" />
+                          Edit
+                        </button>
+                        {confirmDeleteProductId === prod.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDeleteProduct(prod.id);
+                                setConfirmDeleteProductId(null);
+                              }}
+                              className="rounded-lg bg-rose-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-800"
+                            >
+                              Confirm Delete
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteProductId(null)}
+                              className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteProductId(prod.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -957,7 +1028,7 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
         </div>
       )}
 
-      {/* Admin Manage User Account Modal */}
+      {/* Admin Manage User Account Modal (Full Read, Update, Delete & Password Reset) */}
       {managedUser && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4"
@@ -968,12 +1039,20 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
           <div className="max-h-[92vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             <div className="flex items-start justify-between border-b border-slate-200 pb-3">
               <div>
-                <p className="text-xs font-semibold text-[#164081]">User Security Governance</p>
+                <p className="text-xs font-semibold text-[#164081]">
+                  User Security Governance &amp; Profile CRUD
+                </p>
                 <h2 className="font-display text-lg font-bold text-slate-900">
                   {managedUser.fullName}
                 </h2>
                 <p className="text-xs text-slate-500">
                   {managedUser.email} {managedUser.phone ? `· ${managedUser.phone}` : ''}
+                </p>
+                <p className="mt-0.5 text-[11px] text-slate-400 tabular-nums">
+                  Created {new Date(managedUser.createdAt).toLocaleDateString()}
+                  {managedUser.lastLoginAt
+                    ? ` · Last sign in ${new Date(managedUser.lastLoginAt).toLocaleString()}`
+                    : ' · Never signed in'}
                 </p>
               </div>
               <button
@@ -999,7 +1078,7 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
               </div>
             )}
 
-            {/* User Activity & Organization Summary */}
+            {/* User Activity Read Summary */}
             <div className="grid grid-cols-3 gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-center text-xs">
               <div>
                 <div className="font-mono text-base font-bold text-slate-900">
@@ -1033,41 +1112,45 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
               </div>
             </div>
 
-            {managedUser.companyName && (
-              <div className="rounded-lg border border-slate-200 px-3.5 py-2.5 text-xs text-slate-700">
-                Organization: <strong>{managedUser.companyName}</strong> · TIN:{' '}
-                <strong className="font-mono">{managedUser.tinNumber || 'N/A'}</strong>
-              </div>
-            )}
-
-            {/* Status & Role Controls */}
-            <div className="space-y-3 rounded-lg border border-slate-200 p-4">
+            {/* Update User Profile, Role & Status Form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const err = onUpdateUser(managedUser.email, {
+                  fullName: manageFullName,
+                  phone: managePhone,
+                  companyName: manageCompanyName,
+                  tinNumber: manageTinNumber,
+                  headline: manageHeadline,
+                  role: manageRole,
+                  status: manageStatus,
+                });
+                if (err) {
+                  setManageFeedback({ text: err, isError: true });
+                  return;
+                }
+                setManageFeedback({
+                  text: `Profile, role (${manageRole.toUpperCase()}), and status (${manageStatus}) updated for ${managedUser.email}.`,
+                });
+              }}
+              className="space-y-3 rounded-lg border border-slate-200 p-4"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs">
-                  <span className="font-semibold text-slate-700">Account Status: </span>
-                  <span
-                    className={`font-bold uppercase ${
-                      managedUser.status === 'approved'
-                        ? 'text-emerald-700'
-                        : managedUser.status === 'pending'
-                        ? 'text-amber-700'
-                        : 'text-rose-700'
-                    }`}
-                  >
-                    {managedUser.status}
-                  </span>
-                </div>
+                <span className="text-xs font-bold text-slate-900">
+                  Update User Details &amp; Authorization
+                </span>
                 <div className="flex gap-2">
                   {managedUser.status !== 'approved' && (
                     <button
                       type="button"
                       onClick={() => {
                         onSetUserStatus(managedUser.email, 'approved');
+                        setManageStatus('approved');
                         setManageFeedback({ text: 'Account status set to Approved.' });
                       }}
-                      className="rounded-lg bg-[#0F766E] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0D625C]"
+                      className="rounded-lg bg-[#0F766E] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#0D625C]"
                     >
-                      Approve / Reactivate
+                      Approve
                     </button>
                   )}
                   {managedUser.status !== 'suspended' && (
@@ -1075,18 +1158,39 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
                       type="button"
                       onClick={() => {
                         onSetUserStatus(managedUser.email, 'suspended');
+                        setManageStatus('suspended');
                         setManageFeedback({ text: 'Account suspended immediately.' });
                       }}
-                      className="rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                      className="rounded-lg border border-rose-300 px-2.5 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
                     >
-                      Suspend Account
+                      Suspend
                     </button>
                   )}
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
-                <label className="flex-1 text-xs font-semibold text-slate-700">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Full Name *
+                  <input
+                    type="text"
+                    required
+                    value={manageFullName}
+                    onChange={(e) => setManageFullName(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900"
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-slate-700">
+                  Phone Number *
+                  <input
+                    type="text"
+                    required
+                    value={managePhone}
+                    onChange={(e) => setManagePhone(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900"
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-slate-700">
                   Assigned Role
                   <select
                     value={manageRole}
@@ -1098,22 +1202,63 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
                     <option value="admin">Administrator</option>
                   </select>
                 </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const err = onUpdateUserRole(managedUser.email, manageRole);
-                    if (err) {
-                      setManageFeedback({ text: err, isError: true });
-                    } else {
-                      setManageFeedback({ text: `Role updated to ${manageRole.toUpperCase()}.` });
-                    }
-                  }}
-                  className="rounded-lg border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
-                >
-                  Update Role
-                </button>
+                <label className="block text-xs font-semibold text-slate-700">
+                  Account Status
+                  <select
+                    value={manageStatus}
+                    onChange={(e) => setManageStatus(e.target.value as AccountStatus)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900"
+                  >
+                    <option value="approved">Approved</option>
+                    <option value="pending">Pending Verification</option>
+                    <option value="suspended">Suspended</option>
+                  </select>
+                </label>
               </div>
-            </div>
+
+              {(manageRole === 'employer' || manageCompanyName || manageTinNumber) && (
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Company Name {manageRole === 'employer' ? '*' : ''}
+                    <input
+                      type="text"
+                      required={manageRole === 'employer'}
+                      value={manageCompanyName}
+                      onChange={(e) => setManageCompanyName(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Business TIN {manageRole === 'employer' ? '*' : ''}
+                    <input
+                      type="text"
+                      required={manageRole === 'employer'}
+                      value={manageTinNumber}
+                      onChange={(e) => setManageTinNumber(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 font-mono text-xs text-slate-900"
+                    />
+                  </label>
+                </div>
+              )}
+
+              <label className="block text-xs font-semibold text-slate-700">
+                Headline / Internal Note
+                <input
+                  type="text"
+                  value={manageHeadline}
+                  onChange={(e) => setManageHeadline(e.target.value)}
+                  placeholder="Role bio or organization summary"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="w-full rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
+              >
+                Save User Changes
+              </button>
+            </form>
 
             {/* Admin Password Reset Form */}
             <form
@@ -1160,11 +1305,68 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
               </div>
               <button
                 type="submit"
-                className="rounded-lg bg-[#164081] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#102E61]"
+                className="rounded-lg border border-[#164081] bg-white px-4 py-1.5 text-xs font-semibold text-[#164081] hover:bg-[#F0F5FF]"
               >
                 Reset User Password
               </button>
             </form>
+
+            {/* Admin Delete User Control */}
+            <div className="rounded-lg border border-rose-200 bg-rose-50/70 p-4">
+              {confirmDeleteUserEmail === managedUser.email ? (
+                <div className="space-y-2.5">
+                  <div className="text-xs font-bold text-rose-900">
+                    Confirm deleting user {managedUser.email}?
+                  </div>
+                  <p className="text-[11px] text-rose-800">
+                    This permanently removes the user account and signs out any matching active
+                    session. Audit logs are preserved.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const delErr = onDeleteUser(managedUser.email);
+                        if (delErr) {
+                          setManageFeedback({ text: delErr, isError: true });
+                          setConfirmDeleteUserEmail(null);
+                          return;
+                        }
+                        setConfirmDeleteUserEmail(null);
+                        setManagedUserEmail(null);
+                      }}
+                      className="rounded-lg bg-rose-700 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-rose-800"
+                    >
+                      Confirm Delete User
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteUserEmail(null)}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-bold text-rose-900">Danger Zone · Delete User</div>
+                    <div className="text-[11px] text-rose-700">
+                      Permanently delete this user profile from TATARI.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteUserEmail(managedUser.email)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete User Account
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

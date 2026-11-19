@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { LogOut, Lock, ShieldCheck, Upload, UserCheck, X } from 'lucide-react';
+import { LogOut, Lock, ShieldCheck, Trash2, Upload, UserCheck, UserPen, X } from 'lucide-react';
 import {
   validateEmailFormat,
   validatePasswordStrength,
+  type SelfProfileUpdateInput,
 } from '../lib/security';
 import {
   calculateCommercialPricing,
@@ -46,7 +47,9 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
   const [applicantName, setApplicantName] = useState(currentUser?.fullName || '');
   const [applicantEmail, setApplicantEmail] = useState(currentUser?.email || '');
   const [phone, setPhone] = useState(currentUser?.phone || '+251911');
-  const [resumeUrl, setResumeUrl] = useState('https://drive.google.com/my-cv-2026');
+  const [resumeUrl, setResumeUrl] = useState(
+    currentUser?.defaultResumeUrl || 'https://drive.google.com/my-cv-2026'
+  );
   const [yearsExperience, setYearsExperience] = useState('3-5 years');
   const [coverNote, setCoverNote] = useState('');
   const [password, setPassword] = useState('');
@@ -576,10 +579,10 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
   );
 };
 
-/* 3. Secure Auth Sign In / Verified Role Registration / Change Password Modal */
+/* 3. Secure Auth Sign In / Verified Role Registration / Profile CRUD / Change Password Modal */
 interface AuthModalProps {
   currentUser: UserProfile | null;
-  initialMode?: 'signin' | 'signup' | 'password';
+  initialMode?: 'profile' | 'signin' | 'signup' | 'password';
   initialRole?: 'seeker' | 'employer';
   contextNotice?: string | null;
   lockoutSecondsRemaining?: number;
@@ -601,6 +604,8 @@ interface AuthModalProps {
     newPassword: string,
     confirmPassword: string
   ) => string | null;
+  onUpdateProfile: (updates: SelfProfileUpdateInput) => string | null;
+  onDeleteOwnAccount: (currentPassword: string) => string | null;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -614,11 +619,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onSignOut,
   onRegister,
   onChangePassword,
+  onUpdateProfile,
+  onDeleteOwnAccount,
 }) => {
-  const defaultMode: 'signin' | 'signup' | 'password' =
-    currentUser && initialMode === 'signin' && !contextNotice ? 'password' : initialMode;
+  const defaultMode: 'profile' | 'signin' | 'signup' | 'password' =
+    currentUser && initialMode === 'signin' && !contextNotice ? 'profile' : initialMode;
 
-  const [mode, setMode] = useState<'signin' | 'signup' | 'password'>(defaultMode);
+  const [mode, setMode] = useState<'profile' | 'signin' | 'signup' | 'password'>(defaultMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -630,10 +637,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [phone, setPhone] = useState('+251911');
   const [role, setRole] = useState<'seeker' | 'employer'>(initialRole);
   const [error, setError] = useState<string | null>(null);
+  const [profileFeedback, setProfileFeedback] = useState<string | null>(null);
+
+  // Self-service Profile Read/Update/Delete fields
+  const [editFullName, setEditFullName] = useState(currentUser?.fullName || '');
+  const [editPhone, setEditPhone] = useState(currentUser?.phone || '+251911');
+  const [editCompanyName, setEditCompanyName] = useState(currentUser?.companyName || '');
+  const [editTinNumber, setEditTinNumber] = useState(currentUser?.tinNumber || '');
+  const [editHeadline, setEditHeadline] = useState(currentUser?.headline || '');
+  const [editResumeUrl, setEditResumeUrl] = useState(currentUser?.defaultResumeUrl || '');
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setProfileFeedback(null);
+
+    if (mode === 'profile' && currentUser) {
+      const err = onUpdateProfile({
+        fullName: editFullName,
+        phone: editPhone,
+        companyName: currentUser.role === 'employer' ? editCompanyName : undefined,
+        tinNumber: currentUser.role === 'employer' ? editTinNumber : undefined,
+        headline: editHeadline,
+        defaultResumeUrl: editResumeUrl,
+      });
+      if (err) {
+        setError(err);
+        return;
+      }
+      setProfileFeedback('Your profile details were updated successfully.');
+      return;
+    }
 
     if (mode === 'password') {
       const err = onChangePassword(currentPassword, newPassword, confirmPassword);
@@ -683,7 +719,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       aria-modal="true"
       aria-label="Secure account sign in and registration"
     >
-      <div className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
             <div className="flex items-center gap-1.5 text-xs font-semibold text-[#164081]">
@@ -691,7 +727,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <span>TATARI Secure Access</span>
             </div>
             <h2 className="mt-0.5 font-display text-lg font-bold text-slate-900">
-              {mode === 'password'
+              {mode === 'profile'
+                ? 'My Profile & Account Controls'
+                : mode === 'password'
                 ? 'Account Security & Password'
                 : mode === 'signin'
                 ? 'Sign In to Your Account'
@@ -728,6 +766,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     {currentUser.status}
                   </span>
                 </div>
+                <div className="mt-0.5 text-[11px] text-slate-500 tabular-nums">
+                  Joined {new Date(currentUser.createdAt).toLocaleDateString()}
+                  {currentUser.lastLoginAt
+                    ? ` · Last sign in ${new Date(currentUser.lastLoginAt).toLocaleDateString()}`
+                    : ''}
+                </div>
               </div>
               <button
                 type="button"
@@ -735,7 +779,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   onSignOut();
                   onClose();
                 }}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 shrink-0"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 Sign Out
@@ -754,9 +798,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           role="tablist"
           aria-label="Authentication mode"
           className={`mt-4 grid gap-1.5 rounded-lg bg-slate-100 p-1 ${
-            currentUser ? 'grid-cols-3' : 'grid-cols-2'
+            currentUser ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2'
           }`}
         >
+          {currentUser && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'profile'}
+              onClick={() => {
+                setMode('profile');
+                setError(null);
+                setProfileFeedback(null);
+              }}
+              className={`rounded-md py-1.5 text-xs font-semibold transition-colors ${
+                mode === 'profile' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+              }`}
+            >
+              My Profile
+            </button>
+          )}
           {currentUser && (
             <button
               type="button"
@@ -765,12 +826,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               onClick={() => {
                 setMode('password');
                 setError(null);
+                setProfileFeedback(null);
               }}
               className={`rounded-md py-1.5 text-xs font-semibold transition-colors ${
                 mode === 'password' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
               }`}
             >
-              Change Password
+              Password
             </button>
           )}
           <button
@@ -780,12 +842,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             onClick={() => {
               setMode('signin');
               setError(null);
+              setProfileFeedback(null);
             }}
             className={`rounded-md py-1.5 text-xs font-semibold transition-colors ${
               mode === 'signin' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
-            {currentUser ? 'Switch Account' : 'Sign In'}
+            {currentUser ? 'Switch User' : 'Sign In'}
           </button>
           <button
             type="button"
@@ -794,6 +857,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             onClick={() => {
               setMode('signup');
               setError(null);
+              setProfileFeedback(null);
             }}
             className={`rounded-md py-1.5 text-xs font-semibold transition-colors ${
               mode === 'signup' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
@@ -813,7 +877,161 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
-          {mode === 'password' && currentUser ? (
+          {profileFeedback && (
+            <div
+              role="status"
+              className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800"
+            >
+              {profileFeedback}
+            </div>
+          )}
+
+          {mode === 'profile' && currentUser ? (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Full Name *
+                  <input
+                    type="text"
+                    required
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-slate-700">
+                  Phone Number *
+                  <input
+                    type="text"
+                    required
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                  />
+                </label>
+              </div>
+
+              {currentUser.role === 'employer' && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Company / Organization *
+                    <input
+                      type="text"
+                      required
+                      value={editCompanyName}
+                      onChange={(e) => setEditCompanyName(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Business TIN / License *
+                    <input
+                      type="text"
+                      required
+                      value={editTinNumber}
+                      onChange={(e) => setEditTinNumber(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                    />
+                  </label>
+                </div>
+              )}
+
+              <label className="block text-xs font-semibold text-slate-700">
+                Professional Headline (Optional)
+                <input
+                  type="text"
+                  value={editHeadline}
+                  onChange={(e) => setEditHeadline(e.target.value)}
+                  placeholder="e.g. Senior HR & Payroll Specialist · Addis Ababa"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+
+              <label className="block text-xs font-semibold text-slate-700">
+                Default CV / Resume URL (Auto-fills Easy Apply)
+                <input
+                  type="url"
+                  value={editResumeUrl}
+                  onChange={(e) => setEditResumeUrl(e.target.value)}
+                  placeholder="https://drive.google.com/your-cv"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#164081] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#102E61]"
+              >
+                <UserPen className="h-3.5 w-3.5" />
+                Save Profile Changes
+              </button>
+
+              {/* Self-service Delete Account Section */}
+              <div className="mt-4 border-t border-slate-200 pt-4">
+                {currentUser.email.toLowerCase() === 'admin@tatari.et' ? (
+                  <p className="text-[11px] text-slate-500">
+                    Primary System Administrator account cannot be self-deleted.
+                  </p>
+                ) : !confirmDeleteOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmDeleteOpen(true);
+                      setError(null);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-700 hover:underline"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete My Account Permanently
+                  </button>
+                ) : (
+                  <div className="space-y-2.5 rounded-lg border border-rose-200 bg-rose-50 p-3.5">
+                    <div className="text-xs font-bold text-rose-900">
+                      Confirm Permanent Account Deletion
+                    </div>
+                    <p className="text-[11px] text-rose-800">
+                      Enter your current password to permanently delete{' '}
+                      <strong>{currentUser.email}</strong>. This signs you out immediately.
+                    </p>
+                    <input
+                      type="password"
+                      value={deletePassword}
+                      onChange={(e) => setDeletePassword(e.target.value)}
+                      placeholder="Current password to confirm delete"
+                      aria-label="Current password to confirm account deletion"
+                      className="w-full rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-rose-600 focus:outline-none"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const delErr = onDeleteOwnAccount(deletePassword);
+                          if (delErr) {
+                            setError(delErr);
+                            return;
+                          }
+                          onClose();
+                        }}
+                        className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-800"
+                      >
+                        Confirm Permanent Deletion
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmDeleteOpen(false);
+                          setDeletePassword('');
+                        }}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : mode === 'password' && currentUser ? (
             <>
               <label className="block text-xs font-semibold text-slate-700">
                 Current Password *
@@ -986,37 +1204,56 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   );
 };
 
-/* 4. Admin Add Digital Store Material Modal */
+/* 4. Admin Create / Edit Digital Store Material Modal */
 interface AddProductModalProps {
+  editingProduct?: DigitalProduct | null;
   onClose: () => void;
   onAddProduct: (product: Omit<DigitalProduct, 'id' | 'sellerEmail' | 'active' | 'createdAt'>) => void;
+  onUpdateProduct?: (
+    productId: string,
+    updates: Omit<DigitalProduct, 'id' | 'sellerEmail' | 'active' | 'createdAt'>
+  ) => void;
 }
 
-export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onAddProduct }) => {
-  const [titleEn, setTitleEn] = useState('');
-  const [category, setCategory] = useState('Payroll & HR');
-  const [priceEtb, setPriceEtb] = useState(1200);
-  const [fileFormat, setFileFormat] = useState('XLSX / PDF');
-  const [fileSize, setFileSize] = useState('2.5 MB');
-  const [version, setVersion] = useState('v1.0');
-  const [descriptionEn, setDescriptionEn] = useState('');
-  const [includedFilesText, setIncludedFilesText] = useState('');
+export const AddProductModal: React.FC<AddProductModalProps> = ({
+  editingProduct,
+  onClose,
+  onAddProduct,
+  onUpdateProduct,
+}) => {
+  const [titleEn, setTitleEn] = useState(editingProduct?.titleEn || '');
+  const [category, setCategory] = useState(editingProduct?.category || 'Payroll & HR');
+  const [priceEtb, setPriceEtb] = useState(editingProduct?.priceEtb ?? 1200);
+  const [fileFormat, setFileFormat] = useState(editingProduct?.fileFormat || 'XLSX / PDF');
+  const [fileSize, setFileSize] = useState(editingProduct?.fileSize || '2.5 MB');
+  const [version, setVersion] = useState(editingProduct?.version || 'v1.0');
+  const [descriptionEn, setDescriptionEn] = useState(editingProduct?.descriptionEn || '');
+  const [includedFilesText, setIncludedFilesText] = useState(
+    editingProduct?.includedFiles?.join('\n') || ''
+  );
+
+  const isEditing = Boolean(editingProduct);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onAddProduct({
+    const payload = {
       titleEn: titleEn.trim(),
       category,
       priceEtb: Number(priceEtb),
-      fileFormat,
-      fileSize,
-      version,
+      fileFormat: fileFormat.trim(),
+      fileSize: fileSize.trim(),
+      version: version.trim(),
       descriptionEn: descriptionEn.trim(),
       includedFiles: includedFilesText
         .split('\n')
         .map((s) => s.trim())
         .filter(Boolean),
-    });
+    };
+    if (editingProduct && onUpdateProduct) {
+      onUpdateProduct(editingProduct.id, payload);
+    } else {
+      onAddProduct(payload);
+    }
     onClose();
   };
 
@@ -1025,15 +1262,15 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onAdd
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="Add digital material"
+      aria-label={isEditing ? 'Edit digital material' : 'Add digital material'}
     >
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-lg space-y-4 rounded-xl bg-white p-6 shadow-xl"
+        className="max-h-[92vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
       >
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <h2 className="font-display text-lg font-bold text-slate-900">
-            Publish Digital Material to Store
+            {isEditing ? 'Update Digital Material' : 'Publish Digital Material to Store'}
           </h2>
           <button
             type="button"
@@ -1139,7 +1376,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onAdd
             type="submit"
             className="rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
           >
-            Publish Material
+            {isEditing ? 'Save Material Changes' : 'Publish Material'}
           </button>
         </div>
       </form>

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="theme-color" content="#10243b"/>
+  <title data-i18n="page_title">TATARI — Consulting, Ethiopian Job Board, Freelance & Digital Store</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Ethiopic:wght@400;500;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body data-page="home">
+  <header class="topbar">
+    <a class="brand" href="index.html">
+      <span class="brand-icon">T</span>
+      <span><b>TATARI</b><small>PEOPLE · DATA · TECH</small></span>
+    </a>
+    <button class="mobile-menu" id="mobileMenu" type="button" aria-label="Menu">☰</button>
+    <nav id="nav">
+      <a href="index.html" class="active-link" data-i18n="nav_home">Home</a>
+      <a href="#consulting" data-i18n="nav_consulting">Consulting</a>
+      <a href="jobs.html" data-i18n="nav_jobs">Find Jobs</a>
+      <a href="freelance.html" data-i18n="nav_freelance">Freelance</a>
+      <a href="products.html" data-i18n="nav_store">Store</a>
+      <a href="dashboard.html" id="navDashboardLink" data-i18n="nav_dashboard">Dashboard</a>
+    </nav>
+    <div class="head-actions">
+      <div class="lang-switch" role="group" aria-label="Language switcher">
+        <button class="lang-btn active" id="langEN" type="button">EN</button>
+        <button class="lang-btn" id="langAM" type="button">አማ</button>
+      </div>
+      <button class="btn btn-primary btn-small" id="postQuickBtn" type="button" data-i18n="nav_post">+ Post Job / Project</button>
+      <button class="btn btn-outline btn-small" id="accountBtn" type="button" data-i18n="btn_login">Login / Sign Up</button>
+      <button class="btn btn-outline btn-small" id="logoutBtn" hidden type="button" data-i18n="btn_logout">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="home">
+      <div class="hero-copy">
+        <span class="eyebrow" data-i18n="hero_eyebrow">ETHIOPIA'S ALL-IN-ONE TALENT, FREELANCE & CONSULTING HUB</span>
+        <h1 data-i18n="hero_title">People. Data. Technology.<br/><em>Growth.</em></h1>
+        <p class="hero-sub" data-i18n="hero_desc">Hire vetted Ethiopian professionals, bid on freelance projects, find full-time careers, purchase automated business templates, or partner with TATARI Consulting.</p>
+
+        <form class="hero-search-bar" id="heroSearchForm">
+          <select id="heroSearchMode" aria-label="Search Mode">
+            <option value="jobs" data-i18n="mode_jobs">🏢 Full-Time & Part-Time Jobs</option>
+            <option value="freelance" data-i18n="mode_freelance">💼 Freelance Projects & Talent</option>
+            <option value="store" data-i18n="mode_store">📦 Digital Templates & Store</option>
+            <option value="consulting" data-i18n="mode_consulting">📊 Consulting Solutions</option>
+          </select>
+          <input type="text" id="heroSearchInput" data-i18n-placeholder="ph_hero_search" placeholder="Search jobs, Power Query templates, HR, Python, Addis Ababa..."/>
+          <button type="submit" class="btn btn-primary" data-i18n="btn_search">Search ↗</button>
+        </form>
+
+        <div class="hero-proof">
+          <span>✦</span> <span data-i18n="hero_proof_text">Addis Ababa & Sheger City · Bilingual (EN/አማ) · Telebirr Escrow & Verified Roles</span>
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="visual-ring ring1"></div>
+        <div class="visual-ring ring2"></div>
+        <div class="visual-center">T</div>
+        <span class="orbit-tag tag1" data-i18n="tag_jobs">LOCAL JOBS</span>
+        <span class="orbit-tag tag2" data-i18n="tag_freelance">FREELANCE BIDS</span>
+        <span class="orbit-tag tag3" data-i18n="tag_analytics">POWER QUERY</span>
+        <span class="orbit-tag tag4" data-i18n="tag_hr">HR SYSTEMS</span>
+      </div>
+    </section>
+
+    <section class="section" id="consulting">
+      <div class="section-head">
+        <div>
+          <div class="section-label" data-i18n="cons_eyebrow">MANAGEMENT & TECHNOLOGY ADVISORY</div>
+          <h2 data-i18n="cons_title">TATARI Consulting <em>Divisions & Solutions</em></h2>
+        </div>
+        <a href="#contact" class="btn btn-outline btn-small" data-i18n="btn_request_demo">Book Free Sample Dashboard ↗</a>
+      </div>
+
+      <div class="divisions-grid">
+        <article class="division-card">
+          <span class="pill">TATARI PEOPLE</span>
+          <h3 data-i18n="div_people_t">HR Systems & Org Design</h3>
+          <p data-i18n="div_people_d">SME HR Starter Packages, Job Descriptions, Job Evaluation, Salary Scales, and Ethiopian Labor Law Policy Packs (ETB 15,000 – 40,000).</p>
+        </article>
+        <article class="division-card">
+          <span class="pill">TATARI ANALYTICS</span>
+          <h3 data-i18n="div_anl_t">Power Query & KPI Dashboards</h3>
+          <p data-i18n="div_anl_d">Automated Excel/Power Query ETL reporting pipelines, HR analytics, and cross-functional KPI dashboards (ETB 5,000 – 20,000).</p>
+        </article>
+        <article class="division-card">
+          <span class="pill">TATARI DIGITAL</span>
+          <h3 data-i18n="div_dig_t">Reporting Automation Retainers</h3>
+          <p data-i18n="div_dig_d">Process mapping, digital HR workflows, and monthly automated report maintenance retainers (ETB 3,000 – 8,000/mo).</p>
+        </article>
+        <article class="division-card">
+          <span class="pill">TATARI ACADEMY</span>
+          <h3 data-i18n="div_acad_t">Corporate Workshops & Templates</h3>
+          <p data-i18n="div_acad_d">Hands-on 1-day & 2-day Excel, Power Query, and HR Analytics corporate training plus reusable digital templates.</p>
+        </article>
+        <article class="division-card">
+          <span class="pill">TATARI INNOVATION</span>
+          <h3 data-i18n="div_inn_t">Digital Transformation Advisory</h3>
+          <p data-i18n="div_inn_d">Technology adoption roadmaps and innovation strategy sessions for Ethiopian startups and growing SMEs.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" style="background:var(--paper); border-top:1px solid var(--line);">
+      <div class="section-head">
+        <div>
+          <div class="section-label" data-i18n="live_eyebrow">LIVE MARKETPLACE FEED</div>
+          <h2 data-i18n="live_title">Latest <em>Jobs, Projects & Store Tools</em></h2>
+        </div>
+        <div class="head-btn-group">
+          <a href="jobs.html" class="btn btn-outline btn-small" data-i18n="btn_all_jobs">View All Jobs →</a>
+          <a href="freelance.html" class="btn btn-primary btn-small" data-i18n="btn_all_gigs">Browse Freelance →</a>
+        </div>
+      </div>
+
+      <div class="catalog-grid" id="homeLivePreviewGrid">
+        <div class="empty" data-i18n="loading_opportunities">Loading live marketplace records...</div>
+      </div>
+    </section>
+
+    <section class="section contact" id="contact">
+      <div>
+        <div class="section-label" data-i18n="contact_eyebrow">LET'S WORK TOGETHER</div>
+        <h2 data-i18n="contact_title">Request a Demo Dashboard<br/><em>or Custom Advisory</em></h2>
+        <p data-i18n="contact_desc">Send us a sample of your monthly report and we will demonstrate an automated Power Query dashboard tailored to your organization.</p>
+      </div>
+      <form class="form-card" id="inquiryForm">
+        <h3 data-i18n="form_inquiry_title">Send an inquiry</h3>
+        <div class="form-grid">
+          <label><span data-i18n="lbl_your_name">Your name</span><input name="name" required minlength="2"/></label>
+          <label><span data-i18n="lbl_email">Email address</span><input name="email" type="email" required/></label>
+          <label><span data-i18n="lbl_phone">Phone / WhatsApp</span><input name="phone" placeholder="+251 9..."/></label>
+          <label><span data-i18n="lbl_interest">Service Division</span>
+            <select name="service">
+              <option>TATARI Analytics (Power Query / Dashboard)</option>
+              <option>TATARI People (SME HR Starter Package)</option>
+              <option>TATARI Academy (Corporate Training)</option>
+              <option>TATARI Digital & Innovation</option>
+            </select>
+          </label>
+          <label class="full"><span data-i18n="lbl_message">Project or Organization Details</span><textarea name="message" rows="3" required></textarea></label>
+        </div>
+        <button class="btn btn-primary" type="submit" data-i18n="btn_send_inquiry">Send inquiry ↗</button>
+      </form>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-main">
+      <a class="brand" href="index.html"><span class="brand-icon">T</span><span><b>TATARI</b><small>CONSULTING</small></span></a>
+      <p data-i18n="footer_sub">CONSULTING · CAREER PORTAL · FREELANCE MARKETPLACE · DIGITAL STORE</p>
+    </div>
+    <small class="copyright">© <span id="year"></span> <span data-i18n="footer_rights">TATARI Consulting, Addis Ababa, Ethiopia. All rights reserved.</span></small>
+  </footer>
+
+  <div id="modalRoot"></div>
+  <div id="toast" role="status"></div>
+
+  <script src="supabase-config.js"></script>
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

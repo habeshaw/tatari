@@ -9,10 +9,18 @@ import {
   canDownloadMaterial,
   createJobPostingWithPayment,
   createMaterialOrderWithPayment,
+  deleteDigitalProduct,
+  deleteEmployerJobListing,
   filterJobs,
+  filterProducts,
+  getProductRatingSummary,
   isDuplicateTransactionRef,
   isJobPubliclyVisible,
+  updateDigitalProduct,
+  updateEmployerJobListing,
+  upsertProductReview,
 } from './storeLogic';
+import { SEED_USERS } from '../data/seedData';
 import type { DigitalProduct, JobListing } from '../types/domain';
 
 const sampleProduct: DigitalProduct = {
@@ -220,3 +228,108 @@ test('payment submission rejects invalid or missing transaction references', () 
   );
 });
 
+test('digital store sorting, verified buyer reviews, and admin product CRUD enforce authorization', () => {
+  const admin = SEED_USERS.find((u) => u.email === 'admin@tatari.et')!;
+  const abebe = SEED_USERS.find((u) => u.email === 'abebe@tatari.et')!;
+  const prod2: DigitalProduct = {
+    ...sampleProduct,
+    id: 'prod-2',
+    titleEn: 'Career Resume Pack',
+    priceEtb: 450,
+    createdAt: '2026-11-10T10:00:00.000Z',
+  };
+
+  // Price sorting
+  const asc = filterProducts([sampleProduct, prod2], {
+    query: '',
+    category: 'all',
+    maxPrice: 0,
+    sortBy: 'price_asc',
+  });
+  assert.equal(asc[0].id, 'prod-2');
+
+  // Unverified user cannot post review
+  assert.throws(
+    () =>
+      upsertProductReview([], [], abebe, {
+        productId: sampleProduct.id,
+        rating: 5,
+        comment: 'Great workbook!',
+      }),
+    /verified buyers/i
+  );
+
+  // Create & approve order -> buyer can review
+  const { order, receipt } = createMaterialOrderWithPayment(sampleProduct, {
+    payerEmail: abebe.email,
+    payerName: abebe.fullName,
+    payerPhone: '+251911556677',
+    paymentMethod: 'Telebirr',
+    transactionRef: 'TB-REVIEW-01',
+  });
+  const approved = adminApprovePaymentReceipt(
+    { jobs: [], orders: [order], receipts: [receipt] },
+    receipt.id,
+    admin.email
+  );
+  const reviews = upsertProductReview([], approved.orders, abebe, {
+    productId: sampleProduct.id,
+    rating: 5,
+    comment: 'Saved hours on monthly payroll.',
+  });
+  assert.equal(getProductRatingSummary(reviews, sampleProduct.id).average, 5);
+  assert.equal(getProductRatingSummary(reviews, sampleProduct.id).count, 1);
+
+  const topRated = filterProducts([prod2, sampleProduct], {
+    query: '',
+    category: 'all',
+    maxPrice: 0,
+    sortBy: 'top_rated',
+  }, reviews);
+  assert.equal(topRated[0].id, sampleProduct.id);
+
+  // Non-admin cannot update or delete products
+  assert.throws(() =>
+    updateDigitalProduct([sampleProduct], abebe, sampleProduct.id, { priceEtb: 900 })
+  );
+  assert.throws(() => deleteDigitalProduct([sampleProduct], abebe, sampleProduct.id));
+
+  const edited = updateDigitalProduct([sampleProduct], admin, sampleProduct.id, {
+    titleEn: 'Automated Ethiopian Payroll Model Pro',
+    priceEtb: 1850,
+  });
+  assert.equal(edited[0].priceEtb, 1850);
+  const removed = deleteDigitalProduct(edited, admin, sampleProduct.id);
+  assert.equal(removed.length, 0);
+});
+
+test('employer job edit and delete restrict access to listing owner or admin', () => {
+  const employer = SEED_USERS.find((u) => u.email === 'hr@addistech.et')!;
+  const seeker = SEED_USERS.find((u) => u.email === 'abebe@tatari.et')!;
+
+  assert.throws(() =>
+    updateEmployerJobListing([sampleApprovedJob], seeker, sampleApprovedJob.id, {
+      titleEn: 'Hijacked Title',
+      location: 'Addis Ababa',
+      salaryMin: 10000,
+      salaryMax: 20000,
+      deadline: '2026-12-30',
+      descriptionEn: 'Updated job description text here.',
+    })
+  );
+
+  const editedJobs = updateEmployerJobListing([sampleApprovedJob], employer, sampleApprovedJob.id, {
+    titleEn: 'Lead Payroll & HR Systems Officer',
+    location: 'Bole, Addis Ababa',
+    salaryMin: 32000,
+    salaryMax: 40000,
+    deadline: '2026-12-31',
+    descriptionEn: 'Lead monthly payroll automation and compliance reporting across departments.',
+  });
+  assert.equal(editedJobs[0].titleEn, 'Lead Payroll & HR Systems Officer');
+  assert.equal(editedJobs[0].salaryDisplay, '32,000 – 40,000 ETB/mo');
+
+  assert.throws(() => deleteEmployerJobListing(editedJobs, seeker, sampleApprovedJob.id));
+  const afterDelete = deleteEmployerJobListing(editedJobs, employer, sampleApprovedJob.id);
+  assert.equal(afterDelete.length, 0);
+});

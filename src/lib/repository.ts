@@ -16,6 +16,7 @@ import type {
   Language,
   MaterialOrder,
   PaymentReceipt,
+  ProductReview,
   UserProfile,
 } from '../types/domain';
 
@@ -32,6 +33,7 @@ export interface PlatformState {
   products: DigitalProduct[];
   orders: MaterialOrder[];
   receipts: PaymentReceipt[];
+  reviews: ProductReview[];
   logs: AuditLogEntry[];
 }
 
@@ -69,6 +71,7 @@ export function getInitialPlatformState(): PlatformState {
         products,
         orders: Array.isArray(parsed.orders) ? parsed.orders : SEED_ORDERS,
         receipts: Array.isArray(parsed.receipts) ? parsed.receipts : SEED_RECEIPTS,
+        reviews: Array.isArray(parsed.reviews) ? parsed.reviews : [],
         logs: Array.isArray(parsed.logs) ? parsed.logs : SEED_LOGS,
       };
     }
@@ -86,6 +89,7 @@ export function getInitialPlatformState(): PlatformState {
     products: SEED_PRODUCTS,
     orders: SEED_ORDERS,
     receipts: SEED_RECEIPTS,
+    reviews: [],
     logs: SEED_LOGS,
   };
 }
@@ -500,10 +504,13 @@ export async function pushUserProfileAndAuditToSupabase(
         company_name: user.companyName ?? null,
         tin_number: user.tinNumber ?? null,
         phone: user.phone ?? null,
+        headline: user.headline ?? null,
+        default_resume_url: user.defaultResumeUrl ?? null,
         role: user.role,
         status: user.status,
         password_hash: user.passwordHash,
         last_login_at: user.lastLoginAt ?? null,
+        updated_at: user.updatedAt ?? null,
       },
       { onConflict: 'email' }
     );
@@ -516,5 +523,50 @@ export async function pushUserProfileAndAuditToSupabase(
     });
   } catch {
     // Non-blocking sync; local state remains authoritative if schema isn't provisioned yet
+  }
+}
+
+export async function deleteUserFromSupabase(
+  email: string,
+  log: AuditLogEntry
+): Promise<void> {
+  if (!remoteSchemaUpgraded) return;
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    await client.from('profiles').delete().eq('email', email.toLowerCase());
+    await client.from('activity_logs').insert({
+      id: log.id,
+      user_email: log.userEmail,
+      action_type: log.actionType,
+      details: log.details,
+    });
+  } catch {
+    // Non-blocking sync
+  }
+}
+
+export async function deleteJobFromSupabase(jobId: string): Promise<void> {
+  if (!remoteSchemaUpgraded) return;
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    await client.from('career_jobs').delete().eq('id', jobId);
+  } catch {
+    // Non-blocking sync
+  }
+}
+
+export async function deleteProductFromSupabase(productId: string): Promise<void> {
+  if (!remoteSchemaUpgraded) return;
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    await client.from('products').delete().eq('id', productId);
+  } catch {
+    // Non-blocking sync
   }
 }

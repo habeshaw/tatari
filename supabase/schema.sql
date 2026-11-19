@@ -22,8 +22,11 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS company_name TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS tin_number TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS headline TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS default_resume_url TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS password_hash TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
 INSERT INTO public.profiles (email, full_name, company_name, tin_number, phone, role, status)
 VALUES
@@ -199,6 +202,17 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 8. Digital Store Verified Buyer Reviews
+CREATE TABLE IF NOT EXISTS public.product_reviews (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL,
+    reviewer_email TEXT NOT NULL,
+    reviewer_name TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- Enable Row Level Security
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.career_jobs ENABLE ROW LEVEL SECURITY;
@@ -207,6 +221,7 @@ ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.material_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payment_receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.product_reviews ENABLE ROW LEVEL SECURITY;
 
 -- Idempotent RLS Policies
 DROP POLICY IF EXISTS "Public access profiles" ON public.profiles;
@@ -229,3 +244,6 @@ CREATE POLICY "Public access payment_receipts" ON public.payment_receipts FOR AL
 
 DROP POLICY IF EXISTS "Public access activity_logs" ON public.activity_logs;
 CREATE POLICY "Public access activity_logs" ON public.activity_logs FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public access product_reviews" ON public.product_reviews;
+CREATE POLICY "Public access product_reviews" ON public.product_reviews FOR ALL USING (true) WITH CHECK (true);

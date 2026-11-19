@@ -53,6 +53,7 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
 
   const [whatInput, setWhatInput] = useState('');
   const [whereInput, setWhereInput] = useState('');
+  const [companyFilter, setCompanyFilter] = useState('');
   const [selectedJobId, setSelectedJobId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       return new URLSearchParams(window.location.search).get('job');
@@ -62,7 +63,11 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [copiedJobId, setCopiedJobId] = useState<string | null>(null);
 
-  const visibleJobs = useMemo(() => filterJobs(jobs, criteria), [jobs, criteria]);
+  const visibleJobs = useMemo(() => {
+    const base = filterJobs(jobs, criteria);
+    if (!companyFilter) return base;
+    return base.filter((j) => j.companyName.toLowerCase() === companyFilter.toLowerCase());
+  }, [jobs, criteria, companyFilter]);
 
   useEffect(() => {
     if (visibleJobs.length === 0) {
@@ -104,6 +109,7 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
   const resetAllFilters = () => {
     setWhatInput('');
     setWhereInput('');
+    setCompanyFilter('');
     setCriteria({
       what: '',
       where: '',
@@ -143,7 +149,18 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
                 {title}
               </h2>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-700">
-                <span className="font-semibold text-[#164081]">{job.companyName}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCompanyFilter((prev) =>
+                      prev === job.companyName ? '' : job.companyName
+                    )
+                  }
+                  className="font-semibold text-[#164081] hover:underline"
+                  title="Filter vacancies by this employer"
+                >
+                  {job.companyName}
+                </button>
                 <span aria-hidden="true">·</span>
                 <span className="inline-flex items-center gap-1 tabular-nums text-slate-600">
                   <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
@@ -450,6 +467,7 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
 
             {(criteria.what ||
               criteria.where ||
+              companyFilter ||
               criteria.category !== 'all' ||
               criteria.jobType !== 'all' ||
               criteria.remoteType !== 'all' ||
@@ -460,7 +478,7 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
                 onClick={resetAllFilters}
                 className="text-xs font-semibold text-[#164081] hover:underline px-2 py-1"
               >
-                Reset filters
+                Reset filters{companyFilter ? ` (Company: ${companyFilter})` : ''}
               </button>
             )}
           </div>
@@ -472,6 +490,7 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
         <div className="mb-4 flex items-center justify-between text-xs text-slate-500">
           <span className="tabular-nums font-medium">
             Showing {visibleJobs.length} approved {visibleJobs.length === 1 ? 'job' : 'jobs'}
+            {companyFilter ? ` at ${companyFilter}` : ''}
           </span>
           <span>Sorted by newest verified listings</span>
         </div>

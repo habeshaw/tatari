@@ -2,16 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   adminCreateUserAccount,
+  adminDeleteUserAccount,
   adminResetUserPassword,
   adminUpdateAccountStatus,
+  adminUpdateUserAccount,
   adminUpdateUserRole,
   authenticateCredentials,
   canAccessActivity,
+  canManageUserRecord,
   changeOwnPassword,
+  deleteOwnAccount,
   filterUsersForAdmin,
   hashUserPassword,
   registerSeekerAndCreateApplication,
   registerVerifiedRoleAccount,
+  updateOwnProfile,
   verifyUserPassword,
 } from './security';
 import { SEED_JOBS, SEED_USERS } from '../data/seedData';
@@ -225,6 +230,95 @@ test('duplicate job applications from same applicant to the same job are prevent
       ),
     /already submitted/i
   );
+});
+
+test('user record authorization restricts non-admins to self and protects primary admin from deletion', () => {
+  const admin = SEED_USERS.find((u) => u.email === 'admin@tatari.et')!;
+  const seeker = SEED_USERS.find((u) => u.email === 'abebe@tatari.et')!;
+
+  assert.equal(canManageUserRecord(seeker, 'abebe@tatari.et', 'read').allowed, true);
+  assert.equal(canManageUserRecord(seeker, 'abebe@tatari.et', 'update').allowed, true);
+  assert.equal(canManageUserRecord(seeker, 'hr@addistech.et', 'read').allowed, false);
+  assert.equal(canManageUserRecord(seeker, 'hr@addistech.et', 'delete').allowed, false);
+  assert.equal(canManageUserRecord(admin, 'abebe@tatari.et', 'delete').allowed, true);
+  assert.equal(canManageUserRecord(admin, 'admin@tatari.et', 'delete').allowed, false);
+});
+
+test('self-service profile update and permanent account deletion validate inputs and password', () => {
+  assert.throws(
+    () =>
+      updateOwnProfile(SEED_USERS, 'abebe@tatari.et', {
+        fullName: 'Abebe Bikila',
+        phone: '+251911556677',
+        defaultResumeUrl: 'ftp://invalid-cv',
+      }),
+    /http:\/\//i
+  );
+
+  const updated = updateOwnProfile(SEED_USERS, 'abebe@tatari.et', {
+    fullName: 'Abebe B. Teshome',
+    phone: '+251911990011',
+    headline: 'Senior Logistics Coordinator',
+    defaultResumeUrl: 'https://drive.google.com/abebe-cv-2026',
+  });
+  const abebe = updated.find((u) => u.email === 'abebe@tatari.et')!;
+  assert.equal(abebe.fullName, 'Abebe B. Teshome');
+  assert.equal(abebe.headline, 'Senior Logistics Coordinator');
+  assert.equal(abebe.defaultResumeUrl, 'https://drive.google.com/abebe-cv-2026');
+
+  // Wrong password rejected for own account deletion
+  assert.throws(() => deleteOwnAccount(updated, 'abebe@tatari.et', 'WrongPass1'), /incorrect/i);
+  // Primary admin cannot self-delete
+  assert.throws(() => deleteOwnAccount(updated, 'admin@tatari.et', 'TatariAdmin#2026'));
+
+  // Valid deletion removes user cleanly
+  const afterDelete = deleteOwnAccount(updated, 'abebe@tatari.et', 'Seeker@2026');
+  assert.equal(afterDelete.some((u) => u.email === 'abebe@tatari.et'), false);
+});
+
+test('administrator full user update and delete enforce RBAC and employer TIN validation', () => {
+  const admin = SEED_USERS.find((u) => u.email === 'admin@tatari.et')!;
+  const seeker = SEED_USERS.find((u) => u.email === 'abebe@tatari.et')!;
+
+  // Non-admin blocked
+  assert.throws(() =>
+    adminUpdateUserAccount(SEED_USERS, seeker, 'hr@addistech.et', {
+      fullName: 'Hijack',
+      phone: '+251911000000',
+      role: 'admin',
+      status: 'approved',
+    })
+  );
+
+  // Promoting seeker to employer without company/TIN fails
+  assert.throws(
+    () =>
+      adminUpdateUserAccount(SEED_USERS, admin, 'abebe@tatari.et', {
+        fullName: 'Abebe Enterprise',
+        phone: '+251911556677',
+        role: 'employer',
+        status: 'approved',
+      }),
+    /Company name/i
+  );
+
+  const updated = adminUpdateUserAccount(SEED_USERS, admin, 'abebe@tatari.et', {
+    fullName: 'Abebe Logistics PLC',
+    phone: '+251911556688',
+    role: 'employer',
+    status: 'approved',
+    companyName: 'Abebe Logistics',
+    tinNumber: '0044556677',
+    headline: 'Verified Logistics Partner',
+  });
+  const upgraded = updated.find((u) => u.email === 'abebe@tatari.et')!;
+  assert.equal(upgraded.role, 'employer');
+  assert.equal(upgraded.companyName, 'Abebe Logistics');
+
+  // Admin delete removes non-primary user and protects primary admin
+  assert.throws(() => adminDeleteUserAccount(updated, admin, 'admin@tatari.et'));
+  const deleted = adminDeleteUserAccount(updated, admin, 'abebe@tatari.et');
+  assert.equal(deleted.some((u) => u.email === 'abebe@tatari.et'), false);
 });
 
 

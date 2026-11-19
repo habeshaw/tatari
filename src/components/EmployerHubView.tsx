@@ -7,12 +7,15 @@ import {
   FileText,
   Lock,
   PauseCircle,
+  Pencil,
   PlayCircle,
   Plus,
   Search,
   ShieldAlert,
+  Trash2,
   Upload,
   Users,
+  X,
   XCircle,
 } from 'lucide-react';
 import {
@@ -41,6 +44,18 @@ interface EmployerHubViewProps {
   applications: JobApplication[];
   receipts: PaymentReceipt[];
   onSubmitJobWithPayment: (draft: JobDraftInput, payment: PaymentSubmissionInput) => string | null;
+  onUpdateJob: (
+    jobId: string,
+    updates: {
+      titleEn: string;
+      location: string;
+      salaryMin: number;
+      salaryMax: number;
+      deadline: string;
+      descriptionEn: string;
+    }
+  ) => string | null;
+  onDeleteJob: (jobId: string) => void;
   onUpdateApplicationStage: (appId: string, stage: ApplicationStage) => void;
   onToggleJobActiveStatus: (jobId: string) => void;
   onDownloadInvoice: (receipt: PaymentReceipt) => void;
@@ -57,6 +72,8 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
   applications,
   receipts,
   onSubmitJobWithPayment,
+  onUpdateJob,
+  onDeleteJob,
   onUpdateApplicationStage,
   onToggleJobActiveStatus,
   onDownloadInvoice,
@@ -96,9 +113,48 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
   const [candidateSearch, setCandidateSearch] = useState('');
   const [candidateStageFilter, setCandidateStageFilter] = useState<'all' | ApplicationStage>('all');
 
+  // Job Edit / Delete State
+  const [editingJob, setEditingJob] = useState<JobListing | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editSalaryMin, setEditSalaryMin] = useState(0);
+  const [editSalaryMax, setEditSalaryMax] = useState(0);
+  const [editDeadline, setEditDeadline] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [confirmDeleteJobId, setConfirmDeleteJobId] = useState<string | null>(null);
+
   const activePackage =
     JOB_POSTING_PACKAGES.find((p) => p.id === selectedTier) || JOB_POSTING_PACKAGES[0];
   const pricing = calculateCommercialPricing(activePackage.priceEtb, appliedPromoInput, true);
+
+  const employerJobs = useMemo(
+    () =>
+      currentUser
+        ? jobs.filter(
+            (j) =>
+              currentUser.role === 'admin' ||
+              j.employerEmail.toLowerCase() === currentUser.email.toLowerCase()
+          )
+        : [],
+    [jobs, currentUser]
+  );
+
+  const employerCandidates = useMemo(() => {
+    const employerJobIds = new Set(employerJobs.map((j) => j.id));
+    return applications.filter((a) => employerJobIds.has(a.jobId));
+  }, [applications, employerJobs]);
+
+  const filteredCandidates = useMemo(() => {
+    const q = candidateSearch.trim().toLowerCase();
+    return employerCandidates.filter((app) => {
+      if (candidateStageFilter !== 'all' && app.status !== candidateStageFilter) return false;
+      if (!q) return true;
+      return `${app.applicantName} ${app.applicantEmail} ${app.jobTitle} ${app.phone}`
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [employerCandidates, candidateSearch, candidateStageFilter]);
 
   // Strict Access Gate 1: Must be registered & signed in
   if (!currentUser) {
@@ -287,26 +343,6 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
     setStep(1);
     setActiveTab('listings');
   };
-
-  const employerJobs = jobs.filter(
-    (j) =>
-      currentUser.role === 'admin' ||
-      j.employerEmail.toLowerCase() === currentUser.email.toLowerCase()
-  );
-
-  const employerJobIds = new Set(employerJobs.map((j) => j.id));
-  const employerCandidates = applications.filter((a) => employerJobIds.has(a.jobId));
-
-  const filteredCandidates = useMemo(() => {
-    const q = candidateSearch.trim().toLowerCase();
-    return employerCandidates.filter((app) => {
-      if (candidateStageFilter !== 'all' && app.status !== candidateStageFilter) return false;
-      if (!q) return true;
-      return `${app.applicantName} ${app.applicantEmail} ${app.jobTitle} ${app.phone}`
-        .toLowerCase()
-        .includes(q);
-    });
-  }, [employerCandidates, candidateSearch, candidateStageFilter]);
 
   const handleExportCandidatesCsv = () => {
     const rows = [
@@ -867,6 +903,23 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingJob(job);
+                            setEditTitle(job.titleEn);
+                            setEditLocation(job.location);
+                            setEditSalaryMin(job.salaryMin);
+                            setEditSalaryMax(job.salaryMax);
+                            setEditDeadline(job.deadline);
+                            setEditDesc(job.descriptionEn);
+                            setEditError(null);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          <Pencil className="h-3 w-3 text-[#164081]" />
+                          Edit
+                        </button>
                         {(job.status === 'approved' || job.status === 'paused') && (
                           <button
                             type="button"
@@ -884,6 +937,36 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
                                 Reopen
                               </>
                             )}
+                          </button>
+                        )}
+                        {confirmDeleteJobId === job.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDeleteJob(job.id);
+                                setConfirmDeleteJobId(null);
+                              }}
+                              className="rounded-lg bg-rose-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-800"
+                            >
+                              Confirm Delete
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteJobId(null)}
+                              className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteJobId(job.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Delete
                           </button>
                         )}
                         {rcpt && rcpt.status === 'verified' && (
@@ -1022,6 +1105,145 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Employer Edit Job Modal */}
+      {editingJob && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Edit ${editingJob.titleEn}`}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setEditError(null);
+              const err = onUpdateJob(editingJob.id, {
+                titleEn: editTitle,
+                location: editLocation,
+                salaryMin: Number(editSalaryMin),
+                salaryMax: Number(editSalaryMax),
+                deadline: editDeadline,
+                descriptionEn: editDesc,
+              });
+              if (err) {
+                setEditError(err);
+                return;
+              }
+              setEditingJob(null);
+            }}
+            className="max-h-[90vh] w-full max-w-lg space-y-3.5 overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+          >
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <div>
+                <p className="text-xs font-semibold text-[#164081]">Update Vacancy Details</p>
+                <h2 className="font-display text-lg font-bold text-slate-900">
+                  {editingJob.titleEn}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingJob(null)}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {editError && (
+              <div
+                role="alert"
+                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800"
+              >
+                {editError}
+              </div>
+            )}
+
+            <label className="block text-xs font-semibold text-slate-700">
+              Job Title *
+              <input
+                type="text"
+                required
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              />
+            </label>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-semibold text-slate-700">
+                Location *
+                <input
+                  type="text"
+                  required
+                  value={editLocation}
+                  onChange={(e) => setEditLocation(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Application Deadline *
+                <input
+                  type="date"
+                  required
+                  value={editDeadline}
+                  onChange={(e) => setEditDeadline(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Min Salary (ETB) *
+                <input
+                  type="number"
+                  min={0}
+                  required
+                  value={editSalaryMin}
+                  onChange={(e) => setEditSalaryMin(Number(e.target.value))}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Max Salary (ETB) *
+                <input
+                  type="number"
+                  min={0}
+                  required
+                  value={editSalaryMax}
+                  onChange={(e) => setEditSalaryMax(Number(e.target.value))}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 tabular-nums"
+                />
+              </label>
+            </div>
+
+            <label className="block text-xs font-semibold text-slate-700">
+              Full Description *
+              <textarea
+                rows={4}
+                required
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              />
+            </label>
+
+            <div className="flex justify-end gap-2.5 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => setEditingJob(null)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
+              >
+                Save Vacancy Changes
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
