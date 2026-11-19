@@ -1,6 +1,6 @@
 {
-  "name": "TATARI — Job Portal & Digital Store",
-  "description": "Full-featured Indeed-style job search portal and certified digital store with payment receipt verification and administrator approval workflow, ready for Vercel and Supabase.",
+  "name": "TATARI — Ethiopian Job Discovery & Digital Store",
+  "description": "Centralized Ethiopian job aggregation portal and certified digital store with verified payment approval, automated multi-source collection, and dual external/Tatari job routing.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
