@@ -5,6 +5,8 @@ import {
   SEED_ORDERS,
   SEED_PRODUCTS,
   SEED_RECEIPTS,
+  SEED_TRAINING_PROGRAMS,
+  SEED_TRAINING_REQUESTS,
   SEED_USERS,
 } from '../data/seedData';
 import { getSupabaseClient } from './supabaseClient';
@@ -17,6 +19,8 @@ import type {
   MaterialOrder,
   PaymentReceipt,
   ProductReview,
+  TrainingProgram,
+  TrainingRequest,
   UserProfile,
 } from '../types/domain';
 
@@ -34,6 +38,8 @@ export interface PlatformState {
   orders: MaterialOrder[];
   receipts: PaymentReceipt[];
   reviews: ProductReview[];
+  trainingPrograms: TrainingProgram[];
+  trainingRequests: TrainingRequest[];
   logs: AuditLogEntry[];
 }
 
@@ -72,6 +78,12 @@ export function getInitialPlatformState(): PlatformState {
         orders: Array.isArray(parsed.orders) ? parsed.orders : SEED_ORDERS,
         receipts: Array.isArray(parsed.receipts) ? parsed.receipts : SEED_RECEIPTS,
         reviews: Array.isArray(parsed.reviews) ? parsed.reviews : [],
+        trainingPrograms: parsed.trainingPrograms?.length
+          ? parsed.trainingPrograms
+          : SEED_TRAINING_PROGRAMS,
+        trainingRequests: Array.isArray(parsed.trainingRequests)
+          ? parsed.trainingRequests
+          : SEED_TRAINING_REQUESTS,
         logs: Array.isArray(parsed.logs) ? parsed.logs : SEED_LOGS,
       };
     }
@@ -90,6 +102,8 @@ export function getInitialPlatformState(): PlatformState {
     orders: SEED_ORDERS,
     receipts: SEED_RECEIPTS,
     reviews: [],
+    trainingPrograms: SEED_TRAINING_PROGRAMS,
+    trainingRequests: SEED_TRAINING_REQUESTS,
     logs: SEED_LOGS,
   };
 }

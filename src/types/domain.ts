@@ -4,7 +4,7 @@ export type UserRole = 'seeker' | 'employer' | 'admin';
 
 export type AccountStatus = 'pending' | 'approved' | 'suspended';
 
-export type AppView = 'jobs' | 'store' | 'activity' | 'employer' | 'admin';
+export type AppView = 'jobs' | 'training' | 'store' | 'activity' | 'employer' | 'admin';
 
 export type JobType = 'Full-time' | 'Part-time' | 'Contract' | 'Internship';
 
@@ -75,6 +75,24 @@ export interface JobListing {
   rejectionReason?: string;
   createdAt: string;
   publishedAt?: string;
+  sourceType?: 'tatari' | 'external';
+  sourceSite?: string;
+  sourceDomain?: string;
+  sourceUrl?: string;
+  fetchedAt?: string;
+}
+
+export type ExternalJobSourceId = 'ethiojobs' | 'geezjobs' | 'effoysira';
+
+export interface ExternalJobSourceStatus {
+  id: ExternalJobSourceId;
+  name: string;
+  domain: string;
+  homeUrl: string;
+  status: 'ok' | 'error';
+  fetchedCount: number;
+  errorMessage?: string;
+  lastSyncedAt: string;
 }
 
 export interface JobApplication {
@@ -183,6 +201,7 @@ export interface JobFilterCriteria {
   remoteType: string;
   minSalary: number;
   postedWithinDays: number;
+  sourceFilter?: string;
 }
 
 export interface ProductFilterCriteria {
@@ -191,3 +210,71 @@ export interface ProductFilterCriteria {
   maxPrice: number;
   sortBy?: ProductSortOption;
 }
+
+export type TrainingCategory =
+  | 'Data & Power BI'
+  | 'Payroll & HR Systems'
+  | 'Finance & IFRS'
+  | 'Leadership & Org Design'
+  | 'Digital Transformation';
+
+export type TrainingDeliveryMode =
+  | 'On-Site (Your Premises)'
+  | 'Live Virtual'
+  | 'Hybrid Blended'
+  | 'TATARI Training Hub (Addis Ababa)';
+
+export type TrainingProposalStatus =
+  | 'Submitted'
+  | 'Scoped & Quoted'
+  | 'Approved & Scheduled'
+  | 'Completed'
+  | 'Declined';
+
+export interface TrainingProgram {
+  id: string;
+  titleEn: string;
+  titleAm?: string;
+  category: TrainingCategory;
+  durationDays: number;
+  durationLabel: string;
+  targetAudience: string;
+  feePerCohortEtb: number;
+  maxParticipants: number;
+  deliveryModes: TrainingDeliveryMode[];
+  sectorFocus: string[];
+  summaryEn: string;
+  syllabusModules: string[];
+  deliverables: string[];
+  active: boolean;
+  createdAt: string;
+}
+
+export interface TrainingRequest {
+  id: string;
+  requesterEmail: string;
+  organizationName: string;
+  organizationSector: string;
+  contactPerson: string;
+  phone: string;
+  programId: string;
+  programTitle: string;
+  customTopics: string;
+  teamSize: number;
+  deliveryMode: TrainingDeliveryMode;
+  preferredDates: string;
+  locationCity: string;
+  estimatedFeeEtb: number;
+  status: TrainingProposalStatus;
+  trainerAssigned?: string;
+  proposalNotes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface TrainingFilterCriteria {
+  query: string;
+  category: string;
+  deliveryMode: string;
+}
+

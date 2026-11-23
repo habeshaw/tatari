@@ -4,6 +4,7 @@ export const TRANSLATIONS: Record<
   Language,
   {
     navJobs: string;
+    navTraining: string;
     navStore: string;
     navActivity: string;
     navEmployer: string;
@@ -15,6 +16,8 @@ export const TRANSLATIONS: Record<
     findJobs: string;
     jobsHeroTitle: string;
     jobsHeroSubtitle: string;
+    trainingHeroTitle: string;
+    trainingHeroSubtitle: string;
     applyNow: string;
     appliedBadge: string;
     saveJob: string;
@@ -34,6 +37,7 @@ export const TRANSLATIONS: Record<
 > = {
   en: {
     navJobs: 'Find Jobs',
+    navTraining: 'Training',
     navStore: 'Digital Store',
     navActivity: 'Saved & Orders',
     navEmployer: 'Employers / Post Job',
@@ -45,7 +49,10 @@ export const TRANSLATIONS: Record<
     findJobs: 'Find jobs',
     jobsHeroTitle: 'Discover verified careers across Ethiopia and remote teams',
     jobsHeroSubtitle:
-      'Every employer listing is verified by payment receipt and reviewed by an Administrator before publication.',
+      'Browse TATARI Administrator-verified listings alongside live vacancies aggregated from leading Ethiopian job portals with direct source links.',
+    trainingHeroTitle: 'Tailored Corporate & Organizational Training',
+    trainingHeroSubtitle:
+      'Custom in-house and virtual capacity building in Power Query, Ethiopian Payroll & Labor Law, IFRS Reporting, and HR Systems—designed around your organization’s workflows.',
     applyNow: 'Apply now',
     appliedBadge: 'Applied',
     saveJob: 'Save job',
@@ -65,6 +72,7 @@ export const TRANSLATIONS: Record<
   },
   am: {
     navJobs: 'ሥራ ይፈልጉ',
+    navTraining: 'ስልጠናዎች',
     navStore: 'ዲጂታል መደብር',
     navActivity: 'የተቀመጡ እና ትዕዛዞች',
     navEmployer: 'አሠሪዎች / ሥራ ይለጥፉ',
@@ -76,7 +84,10 @@ export const TRANSLATIONS: Record<
     findJobs: 'ሥራ ፈልግ',
     jobsHeroTitle: 'በኢትዮጵያ እና በሪሞት የተረጋገጡ የሥራ ዕድሎችን ያግኙ',
     jobsHeroSubtitle:
-      'ሁሉም የሥራ ማስታወቂያዎች በክፍያ ደረሰኝ እና በአስተዳዳሪ ፈቃድ ተረጋግጠው ይለጠፋሉ።',
+      'በታታሪ የተረጋገጡ እና ከታዋቂ የኢትዮጵያ የሥራ ድረ-ገጾች የተሰበሰቡ ክፍት የሥራ ቦታዎችን ከዋናው ምንጭ አድራሻ ጋር ያግኙ።',
+    trainingHeroTitle: 'ለድርጅትዎ የተበጀ የባለሙያ ስልጠና አገልግሎት',
+    trainingHeroSubtitle:
+      'በPower Query፣ በኢትዮጵያ የደመወዝ እና የአሠሪና ሠራተኛ ሕግ፣ በIFRS እና በሰው ሀብት አስተዳደር ለማንኛውም ድርጅት የሚሰጡ ተግባራዊ ስልጠናዎች።',
     applyNow: 'አሁን ያመልክቱ',
     appliedBadge: 'አመልክተዋል',
     saveJob: 'ሥራ አስቀምጥ',

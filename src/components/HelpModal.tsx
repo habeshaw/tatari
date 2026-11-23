@@ -136,17 +136,20 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700 shrink-0" />
                   <div>
-                    <strong className="text-slate-900">1. Search &amp; Inspect Vacancies:</strong>{' '}
-                    Use the What/Where search bar and facet filters on the Job Board to compare
-                    Addis Ababa, regional, and remote roles.
+                    <strong className="text-slate-900">1. Search &amp; Compare Ethiopian Portals:</strong>{' '}
+                    Browse verified TATARI vacancies alongside live listings collected from
+                    Ethiojobs, GeezJobs, and EffoySira. External jobs clearly state their original
+                    source portal and redirect straight to the source website when clicked.
                   </div>
                 </li>
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700 shrink-0" />
                   <div>
                     <strong className="text-slate-900">2. Apply &amp; Register Simultaneously:</strong>{' '}
-                    Click <strong>Apply now</strong> on your chosen job, enter your Name, Email,
-                    Phone, Password (min 8 characters + 1 number), and CV link.
+                    For TATARI vacancies, click <strong>Apply now</strong>, enter your Name, Email,
+                    Phone, Password (min 8 characters + 1 number), and CV link. For external
+                    portals, click <strong>View Original &amp; Apply</strong> to open the source
+                    listing.
                   </div>
                 </li>
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
@@ -221,6 +224,15 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     goes live automatically upon Admin receipt approval.
                   </div>
                 </li>
+                <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700 shrink-0" />
+                  <div>
+                    <strong className="text-slate-900">4. Request Tailored Corporate Training:</strong>{' '}
+                    Visit the <strong>Training</strong> tab (TATARI Academy) to customize Power BI,
+                    Ethiopian Payroll, IFRS, or Leadership workshops for your department, view live
+                    ETB cohort quotes, and download tailored proposals.
+                  </div>
+                </li>
               </ol>
 
               <div className="flex flex-wrap gap-2.5 pt-1">
@@ -230,6 +242,13 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                   className="rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
                 >
                   Open Employer Hub
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGoView('training')}
+                  className="rounded-lg border border-[#0F766E] px-4 py-2 text-xs font-semibold text-[#0F766E] hover:bg-emerald-50"
+                >
+                  Explore Corporate Training
                 </button>
                 <button
                   type="button"
@@ -333,6 +352,15 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     <strong>Create User</strong>; or click <strong>Manage</strong> to read details,
                     update name/phone/company/TIN/role/status, reset passwords, or delete accounts
                     with complete audit logging.
+                  </div>
+                </li>
+                <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700 shrink-0" />
+                  <div>
+                    <strong className="text-slate-900">Training &amp; External Feed Governance:</strong>{' '}
+                    Assign trainers, finalize quotes, and manage training curriculum tracks in{' '}
+                    <em>Admin Console → Training Services</em>, or refresh aggregated Ethiopian job
+                    feeds in <em>Job Moderation</em>.
                   </div>
                 </li>
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">

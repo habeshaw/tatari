@@ -6,6 +6,8 @@ import type {
   JobListing,
   MaterialOrder,
   PaymentReceipt,
+  TrainingProgram,
+  TrainingRequest,
   UserProfile,
 } from '../types/domain';
 
@@ -529,3 +531,197 @@ export const SEED_LOGS: AuditLogEntry[] = [
     createdAt: '2026-11-17T10:02:00.000Z',
   },
 ];
+
+export const SEED_TRAINING_PROGRAMS: TrainingProgram[] = [
+  {
+    id: 'trn-prog-101',
+    titleEn: 'Automated Excel, Power Query & Executive KPI Dashboards',
+    titleAm: 'አውቶማቲክ የኤክሴል፣ Power Query እና የKPI ዳሽቦርድ ስልጠና',
+    category: 'Data & Power BI',
+    durationDays: 2,
+    durationLabel: '2-Day Intensive (14 hrs)',
+    targetAudience: 'Finance Officers, BI Analysts, HR & Operations Teams',
+    feePerCohortEtb: 28000,
+    maxParticipants: 15,
+    deliveryModes: [
+      'On-Site (Your Premises)',
+      'Live Virtual',
+      'Hybrid Blended',
+      'TATARI Training Hub (Addis Ababa)',
+    ],
+    sectorFocus: [
+      'Banking & Microfinance',
+      'Manufacturing & Agro-Processing',
+      'NGO & Humanitarian Development',
+    ],
+    summaryEn:
+      'Hands-on corporate workshop transforming manual monthly spreadsheets from Peachtree, SAP, or core banking exports into one-click Power Query & Power BI management dashboards.',
+    syllabusModules: [
+      'Structuring messy ERP & branch CSV/Excel exports cleanly',
+      'Power Query ETL pipelines: unpivoting, merging, and zero-formula cleanup',
+      'Automated DAX/Pivot KPI cards for revenue variance, PAR, and inventory turns',
+      'Building an organization-specific live monthly board pack using your sample data',
+    ],
+    deliverables: [
+      'Pre-configured Power Query & Power BI workbook using your company sample dataset',
+      'Bilingual quick-reference playbook & video recordings',
+      'TATARI Academy Completion Certificates for all participants',
+    ],
+    active: true,
+    createdAt: '2026-10-10T08:00:00.000Z',
+  },
+  {
+    id: 'trn-prog-102',
+    titleEn: 'Ethiopian Labor Law (Proc. 1156/2019) & Compliant Payroll Administration',
+    titleAm: 'የኢትዮጵያ የአሠሪና ሠራተኛ ሕግ (1156/2019) እና የደመወዝ አስተዳደር ስልጠና',
+    category: 'Payroll & HR Systems',
+    durationDays: 2,
+    durationLabel: '2-Day Intensive (14 hrs)',
+    targetAudience: 'HR Managers, Payroll Accountants, Legal & Admin Officers',
+    feePerCohortEtb: 24000,
+    maxParticipants: 18,
+    deliveryModes: [
+      'On-Site (Your Premises)',
+      'Hybrid Blended',
+      'TATARI Training Hub (Addis Ababa)',
+    ],
+    sectorFocus: [
+      'Manufacturing & Agro-Processing',
+      'NGO & Humanitarian Development',
+      'Healthcare & Pharmaceuticals',
+    ],
+    summaryEn:
+      'Practical legal and payroll clinic aligned with Ethiopian Labor Proclamation No. 1156/2019, progressive income tax, 7%/11% statutory pension, overtime rules, and compliant disciplinary handling.',
+    syllabusModules: [
+      'Definite vs indefinite employment contracts, probation, and statutory notice periods',
+      'Automating Ethiopian income tax, pension (7%/11%), severance, and overtime calculations',
+      'Leave entitlements, workplace dispute resolution, and lawful termination documentation',
+      'Customizing your organization’s HR policy handbook and ERCA declaration templates',
+    ],
+    deliverables: [
+      'Bilingual (EN/AM) Labor Law Policy & Contract Checklist',
+      'Verified Ethiopian Payroll Power Query Calculator',
+      '30-day post-training HR compliance Q&A desk access',
+    ],
+    active: true,
+    createdAt: '2026-10-12T09:00:00.000Z',
+  },
+  {
+    id: 'trn-prog-103',
+    titleEn: 'IFRS Financial Reporting, Cost Accounting & Cashflow Modeling',
+    titleAm: 'የIFRS ፋይናንስ ሪፖርት፣ የወጪ ሂሳብ እና የገንዘብ ፍሰት ሞዴሊንግ',
+    category: 'Finance & IFRS',
+    durationDays: 3,
+    durationLabel: '3-Day Intensive (21 hrs)',
+    targetAudience: 'Chief Accountants, Cost Controllers, Audit & Treasury Staff',
+    feePerCohortEtb: 34000,
+    maxParticipants: 15,
+    deliveryModes: ['On-Site (Your Premises)', 'TATARI Training Hub (Addis Ababa)'],
+    sectorFocus: [
+      'Banking & Microfinance',
+      'Manufacturing & Agro-Processing',
+      'Hospitality, Logistics & Retail',
+    ],
+    summaryEn:
+      'Tailored accounting program equipping finance teams to close monthly books faster, reconcile VAT/withholding declarations, and prepare AABE-compliant IFRS financial statements.',
+    syllabusModules: [
+      'AABE & IFRS compliance checklist for Ethiopian commercial & manufacturing entities',
+      'Activity-based costing, landed import cost calculation (LC/CAD), and variance analysis',
+      'Rolling 12-month ETB cashflow & working capital forecasting models',
+      'Audit readiness & working paper automation',
+    ],
+    deliverables: [
+      'IFRS Financial Statement & Footnote Working Paper Kit',
+      '3-Year Bank-Ready ETB Cashflow Projection Workbook',
+      'Signed Certificate of Professional Hours',
+    ],
+    active: true,
+    createdAt: '2026-10-15T10:00:00.000Z',
+  },
+  {
+    id: 'trn-prog-104',
+    titleEn: 'Job Evaluation, Competency Frameworks & Balanced Scorecard (BSC)',
+    titleAm: 'የሥራ ምዘና፣ የብቃት ማዕቀፍ እና የባላንስድ ስኮርካርድ (BSC) ስልጠና',
+    category: 'Leadership & Org Design',
+    durationDays: 2,
+    durationLabel: '2-Day Executive Clinic (14 hrs)',
+    targetAudience: 'Department Heads, HR Business Partners, Strategy Leads',
+    feePerCohortEtb: 26000,
+    maxParticipants: 15,
+    deliveryModes: ['On-Site (Your Premises)', 'Hybrid Blended'],
+    sectorFocus: [
+      'Public Enterprise & Government',
+      'Banking & Microfinance',
+      'NGO & Humanitarian Development',
+    ],
+    summaryEn:
+      'Build equitable salary grades, clear job descriptions, and measurable department KPIs so leadership teams align performance appraisals with organizational targets.',
+    syllabusModules: [
+      'Structured job analysis & drafting competency-based Job Descriptions',
+      'Point-factor job evaluation & equitable ETB salary structure design',
+      'Cascading corporate goals into quarterly department & individual BSC scorecards',
+    ],
+    deliverables: [
+      'Organizational Job Evaluation Matrix & Salary Structure Sheet',
+      'Bilingual Performance Appraisal & KPI Scorecard Templates',
+    ],
+    active: true,
+    createdAt: '2026-10-18T11:00:00.000Z',
+  },
+  {
+    id: 'trn-prog-105',
+    titleEn: 'Digital HR Workflows, KoboToolbox Data & AI Productivity for Teams',
+    titleAm: 'ዲጂታል የሥራ ሂደቶች እና የቡድን ምርታማነት ስልጠና',
+    category: 'Digital Transformation',
+    durationDays: 1,
+    durationLabel: '1-Day Practical Bootcamp (7 hrs)',
+    targetAudience: 'MEL Officers, Project Coordinators, Startup & Operations Staff',
+    feePerCohortEtb: 18000,
+    maxParticipants: 20,
+    deliveryModes: ['Live Virtual', 'On-Site (Your Premises)', 'Hybrid Blended'],
+    sectorFocus: [
+      'Technology & Telecom',
+      'NGO & Humanitarian Development',
+      'Hospitality, Logistics & Retail',
+    ],
+    summaryEn:
+      'Accelerate daily reporting and field data quality using KoboToolbox/ODK validation rules, cloud collaboration workflows, and practical SOP automation.',
+    syllabusModules: [
+      'Designing error-proof mobile field forms in KoboToolbox / Google Workspace',
+      'Automating weekly donor & management status summaries',
+      'Data privacy, access control, and digital document governance',
+    ],
+    deliverables: [
+      'Custom Field Data Intake Form & Live Summary Tracker',
+      'Team Digital SOP Playbook & Certificates',
+    ],
+    active: true,
+    createdAt: '2026-10-22T09:30:00.000Z',
+  },
+];
+
+export const SEED_TRAINING_REQUESTS: TrainingRequest[] = [
+  {
+    id: 'trn-req-seed-1',
+    requesterEmail: 'hr@addistech.et',
+    organizationName: 'Addis Tech Manufacturing PLC',
+    organizationSector: 'Manufacturing & Agro-Processing',
+    contactPerson: 'Meron Tadesse',
+    phone: '+251911223344',
+    programId: 'trn-prog-101',
+    programTitle: 'Automated Excel, Power Query & Executive KPI Dashboards',
+    customTopics:
+      'Train 16 factory cost accountants and HR officers using our monthly Peachtree CSV and attendance exports.',
+    teamSize: 16,
+    deliveryMode: 'On-Site (Your Premises)',
+    preferredDates: '2026-12-08 to 2026-12-09',
+    locationCity: 'Addis Ababa (Bole Industrial)',
+    estimatedFeeEtb: 29200,
+    status: 'Scoped & Quoted',
+    trainerAssigned: 'Dawit Mekonnen (Principal BI Trainer)',
+    proposalNotes: 'Includes pre-training audit of Addis Tech Peachtree monthly trial balance export.',
+    createdAt: '2026-11-16T12:00:00.000Z',
+    updatedAt: '2026-11-17T08:30:00.000Z',
+  },
+];
+

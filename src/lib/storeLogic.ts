@@ -194,6 +194,26 @@ export function filterJobs(
       }
     }
 
+    const sourceFilter = (criteria.sourceFilter || 'all').toLowerCase();
+    if (sourceFilter !== 'all') {
+      const isExternal = job.sourceType === 'external';
+      if (sourceFilter === 'tatari' && isExternal) {
+        return false;
+      }
+      if (sourceFilter === 'external' && !isExternal) {
+        return false;
+      }
+      if (sourceFilter !== 'tatari' && sourceFilter !== 'external') {
+        const matchesSite =
+          job.sourceSite?.toLowerCase() === sourceFilter ||
+          job.sourceDomain?.toLowerCase() === sourceFilter ||
+          job.id.toLowerCase().startsWith(`ext-${sourceFilter}-`);
+        if (!matchesSite) {
+          return false;
+        }
+      }
+    }
+
     return true;
   });
 

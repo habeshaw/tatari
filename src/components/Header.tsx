@@ -27,6 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const navItems: { id: AppView; label: string }[] = [
     { id: 'jobs', label: t.navJobs },
+    { id: 'training', label: t.navTraining },
     { id: 'store', label: t.navStore },
     { id: 'activity', label: t.navActivity },
     { id: 'employer', label: t.navEmployer },

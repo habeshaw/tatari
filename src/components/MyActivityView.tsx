@@ -5,7 +5,9 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  ExternalLink,
   FileText,
+  GraduationCap,
   Lock,
   XCircle,
 } from 'lucide-react';
@@ -16,6 +18,7 @@ import type {
   JobListing,
   MaterialOrder,
   PaymentReceipt,
+  TrainingRequest,
 } from '../types/domain';
 
 interface MyActivityViewProps {
@@ -26,12 +29,15 @@ interface MyActivityViewProps {
   orders: MaterialOrder[];
   products: DigitalProduct[];
   receipts: PaymentReceipt[];
+  trainingRequests: TrainingRequest[];
   onToggleSaveJob: (jobId: string) => void;
   onApplyJob: (job: JobListing) => void;
   onDownloadMaterial: (product: DigitalProduct, order: MaterialOrder) => void;
   onDownloadInvoice: (receipt: PaymentReceipt) => void;
+  onDownloadTrainingProposal: (request: TrainingRequest) => void;
   onBrowseJobs: () => void;
   onBrowseStore: () => void;
+  onBrowseTraining: () => void;
   onRequireAuth: () => void;
 }
 
@@ -43,15 +49,18 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
   orders,
   products,
   receipts,
+  trainingRequests,
   onToggleSaveJob,
   onApplyJob,
   onDownloadMaterial,
   onDownloadInvoice,
+  onDownloadTrainingProposal,
   onBrowseJobs,
   onBrowseStore,
+  onBrowseTraining,
   onRequireAuth,
 }) => {
-  const [tab, setTab] = useState<'orders' | 'applications' | 'saved'>('orders');
+  const [tab, setTab] = useState<'orders' | 'applications' | 'saved' | 'training'>('orders');
 
   if (!currentUserEmail) {
     return (
@@ -92,6 +101,9 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
   );
   const myApplications = applications.filter(
     (a) => a.applicantEmail.toLowerCase() === currentUserEmail.toLowerCase()
+  );
+  const myTrainingRequests = trainingRequests.filter(
+    (r) => r.requesterEmail.toLowerCase() === currentUserEmail.toLowerCase()
   );
   const savedJobs = jobs.filter(
     (j) => savedJobIds.includes(j.id) && j.status === 'approved'
@@ -151,6 +163,19 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
             }`}
           >
             Saved Jobs ({savedJobs.length})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'training'}
+            onClick={() => setTab('training')}
+            className={`rounded-md px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              tab === 'training'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Training Proposals ({myTrainingRequests.length})
           </button>
         </div>
       </div>
@@ -331,35 +356,115 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              {savedJobs.map((job) => (
+              {savedJobs.map((job) => {
+                const isExternal = job.sourceType === 'external' && Boolean(job.sourceUrl);
+                const sourceName = job.sourceSite || 'Ethiopian Job Portal';
+                return (
+                  <article
+                    key={job.id}
+                    className="flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center"
+                  >
+                    <div>
+                      {isExternal && (
+                        <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-[#164081]">
+                          Source · {sourceName} ({job.sourceDomain})
+                        </div>
+                      )}
+                      <h2 className="font-display text-base font-bold text-slate-900">
+                        {job.titleEn}
+                      </h2>
+                      <p className="mt-1 text-xs text-slate-600 tabular-nums">
+                        {job.companyName} · {job.location} · {job.salaryDisplay}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onToggleSaveJob(job.id)}
+                        className="rounded-lg border border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Remove
+                      </button>
+                      {isExternal ? (
+                        <a
+                          href={job.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61] whitespace-nowrap shrink-0"
+                        >
+                          <span>View on {sourceName}</span>
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onApplyJob(job)}
+                          className="rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
+                        >
+                          Apply now
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Tab 4: Organizational Training Proposals */}
+      {tab === 'training' && (
+        <section className="mt-6">
+          {myTrainingRequests.length === 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
+              <GraduationCap className="mx-auto h-9 w-9 text-slate-400" />
+              <h2 className="mt-3 font-display text-base font-bold text-slate-900">
+                No organizational training requests yet
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Browse TATARI Academy tracks to request a tailored corporate or NGO training
+                proposal.
+              </p>
+              <button
+                type="button"
+                onClick={onBrowseTraining}
+                className="mt-4 rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
+              >
+                Explore Training Services
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {myTrainingRequests.map((req) => (
                 <article
-                  key={job.id}
+                  key={req.id}
                   className="flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center"
                 >
-                  <div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-slate-500 tabular-nums">
+                      <strong className="text-[#164081]">{req.status}</strong> ·{' '}
+                      {req.organizationName} · {req.teamSize} participants · {req.deliveryMode}
+                    </div>
                     <h2 className="font-display text-base font-bold text-slate-900">
-                      {job.titleEn}
+                      {req.programTitle}
                     </h2>
-                    <p className="mt-1 text-xs text-slate-600 tabular-nums">
-                      {job.companyName} · {job.location} · {job.salaryDisplay}
-                    </p>
+                    <div className="text-xs text-slate-600 tabular-nums">
+                      Quoted Cohort Fee:{' '}
+                      <strong className="font-mono text-slate-900">
+                        {formatCurrencyEtb(req.estimatedFeeEtb)}
+                      </strong>
+                      {req.trainerAssigned && ` · Facilitator: ${req.trainerAssigned}`}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => onToggleSaveJob(job.id)}
-                      className="rounded-lg border border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Remove
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onApplyJob(job)}
-                      className="rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
-                    >
-                      Apply now
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onDownloadTrainingProposal(req)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-[#164081] hover:bg-slate-50 whitespace-nowrap shrink-0"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Download Proposal
+                  </button>
                 </article>
               ))}
             </div>
