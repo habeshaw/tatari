@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   Bookmark,
   CheckCircle2,
   Clock,
@@ -37,6 +38,7 @@ interface OpportunitiesHubViewProps {
   syncedAt: string | null;
   isSyncing: boolean;
   isAdmin?: boolean;
+  errorMessage?: string | null;
   onRefresh: () => void;
   onToggleSaveOpportunity: (oppId: string) => void;
   onNavigateView: (view: AppView) => void;
@@ -54,6 +56,7 @@ export const OpportunitiesHubView: React.FC<OpportunitiesHubViewProps> = ({
   syncedAt,
   isSyncing,
   isAdmin = false,
+  errorMessage = null,
   onRefresh,
   onToggleSaveOpportunity,
   onNavigateView,
@@ -332,6 +335,24 @@ export const OpportunitiesHubView: React.FC<OpportunitiesHubViewProps> = ({
       </section>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {errorMessage && (
+          <div
+            role="alert"
+            className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-950"
+          >
+            <div className="flex items-center gap-2 font-medium">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="rounded-md bg-amber-900 px-3 py-1.5 font-semibold text-white hover:bg-amber-800"
+            >
+              Retry Live Sync
+            </button>
+          </div>
+        )}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 tabular-nums">
           <span>
             Showing {filteredItems.length} verified records

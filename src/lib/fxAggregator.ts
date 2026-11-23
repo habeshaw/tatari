@@ -243,11 +243,10 @@ export const ETHIOPIAN_BANKS_CATALOG: EthiopianBankRegistryItem[] = [
     bankName: 'Tsedey Bank S.C.',
     bankShortName: 'Tsedey',
     isCentralBank: false,
-    officialWebsite: 'https://tsedeybank-sc.com',
-    fxPageUrl: 'https://tsedeybank-sc.com/',
-    feedUrl: 'https://tsedeybank-sc.com/',
-    method: 'unreachable_blocked',
-    unavailableReason: 'No accessible automated FX feed verified.',
+    officialWebsite: 'https://www.tsedeybank.com.et',
+    fxPageUrl: 'https://www.tsedeybank.com.et/',
+    feedUrl: 'https://www.tsedeybank.com.et/',
+    method: 'official_api',
   },
 ];
 
@@ -330,9 +329,77 @@ export function extractHtmlTables(html: string): string[][][] {
   );
 }
 
+const MONTH_INDEX: Record<string, number> = {
+  jan: 0,
+  january: 0,
+  feb: 1,
+  february: 1,
+  mar: 2,
+  march: 2,
+  apr: 3,
+  april: 3,
+  may: 4,
+  jun: 5,
+  june: 5,
+  jul: 6,
+  july: 6,
+  aug: 7,
+  august: 7,
+  sep: 8,
+  sept: 8,
+  september: 8,
+  oct: 9,
+  october: 9,
+  nov: 10,
+  november: 10,
+  dec: 11,
+  december: 11,
+};
+
+function formatUtcIsoDate(year: number, monthIndex: number, day: number): string | null {
+  if (year < 2000 || year > 2100 || monthIndex < 0 || monthIndex > 11 || day < 1 || day > 31) {
+    return null;
+  }
+  const utc = new Date(Date.UTC(year, monthIndex, day));
+  if (
+    utc.getUTCFullYear() !== year ||
+    utc.getUTCMonth() !== monthIndex ||
+    utc.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return utc.toISOString().slice(0, 10);
+}
+
+const FLEX_DATE_REGEX =
+  /\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[-\s]+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[-\s,]+\d{4}|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{4})\b/i;
+
 function parsePublishedDateIso(rawDate: string | null | undefined): string | null {
   if (!rawDate) return null;
   const cleaned = rawDate.replace(/\s+/g, ' ').replace(/,(\S)/g, ', $1').trim();
+  if (!cleaned) return null;
+
+  const isoPrefix = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoPrefix) {
+    return formatUtcIsoDate(Number(isoPrefix[1]), Number(isoPrefix[2]) - 1, Number(isoPrefix[3]));
+  }
+
+  const dayFirst = cleaned.match(/^(\d{1,2})[-\s]+([A-Za-z]+)[-\s,]+(\d{4})$/);
+  if (dayFirst) {
+    const monIdx = MONTH_INDEX[dayFirst[2].toLowerCase()];
+    if (monIdx !== undefined) {
+      return formatUtcIsoDate(Number(dayFirst[3]), monIdx, Number(dayFirst[1]));
+    }
+  }
+
+  const monthFirst = cleaned.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/);
+  if (monthFirst) {
+    const monIdx = MONTH_INDEX[monthFirst[1].toLowerCase()];
+    if (monIdx !== undefined) {
+      return formatUtcIsoDate(Number(monthFirst[3]), monIdx, Number(monthFirst[2]));
+    }
+  }
+
   const parsed = new Date(cleaned);
   if (Number.isNaN(parsed.getTime())) return cleaned || null;
   return parsed.toISOString().slice(0, 10);
@@ -354,7 +421,7 @@ function computeFreshness(
   if (ageDays > 5) {
     return { freshness: 'Outdated', verificationStatus: 'Stale' };
   }
-  if (ageDays > 2) {
+  if (ageDays > 3) {
     return { freshness: 'Stale', verificationStatus: 'Stale' };
   }
   return { freshness: 'Fresh', verificationStatus: 'Verified' };
@@ -856,9 +923,9 @@ export function parseEnatBankHtml(
   collectedAt: string = new Date().toISOString()
 ): BankFxRateRecord[] {
   const bank = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'enat')!;
-  const dateMatch = html.match(
-    /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
-  );
+  const usdIdx = html.search(/<h4[^>]*>\s*USD\s*<\/h4>/i);
+  const fxWindow = usdIdx !== -1 ? html.slice(Math.max(0, usdIdx - 1200), usdIdx) : '';
+  const dateMatch = fxWindow ? fxWindow.match(FLEX_DATE_REGEX) : null;
   const pubDate = dateMatch ? dateMatch[0] : collectedAt.slice(0, 10);
   const results: BankFxRateRecord[] = [];
   const seen = new Set<string>();
@@ -895,9 +962,10 @@ export function parseAbayBankHtml(
   const tables = extractHtmlTables(html);
   if (tables.length === 0) return [];
 
-  const dateMatch = html.match(
-    /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
-  );
+  const headingIdx = html.search(/FOREIGN CURRENCY EXCHANGE RATE/i);
+  const fxWindow =
+    headingIdx !== -1 ? html.slice(headingIdx, headingIdx + 1200) : '';
+  const dateMatch = fxWindow ? fxWindow.match(FLEX_DATE_REGEX) : null;
   const pubDate = dateMatch ? dateMatch[0] : collectedAt.slice(0, 10);
   const results: BankFxRateRecord[] = [];
 
@@ -939,9 +1007,10 @@ export function parseSiinqeeBankHtml(
   const tables = extractHtmlTables(html);
   if (tables.length === 0) return [];
 
-  const dateMatch = html.match(
-    /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
-  );
+  const headingIdx = html.search(/Exchange Rate/i);
+  const fxWindow =
+    headingIdx !== -1 ? html.slice(headingIdx, headingIdx + 600) : '';
+  const dateMatch = fxWindow ? fxWindow.match(FLEX_DATE_REGEX) : null;
   const pubDate = dateMatch ? dateMatch[0] : collectedAt.slice(0, 10);
   const results: BankFxRateRecord[] = [];
 
@@ -1083,6 +1152,90 @@ export function parseGlobalBankHtml(
       }
     }
   }
+  return results;
+}
+
+export interface TsedeyRateItemRaw {
+  name?: string;
+  code?: string;
+  category?: string;
+  buying_rate?: string | number | null;
+  selling_rate?: string | number | null;
+  weighted_average_buying?: string | number | null;
+  weighted_average_selling?: string | number | null;
+  updated_at?: string | null;
+}
+
+export function parseTsedeyBankHtml(
+  html: string,
+  collectedAt: string = new Date().toISOString()
+): BankFxRateRecord[] {
+  const bank = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'tsedey')!;
+  const match = html.match(/x-data='\{\s*rates:\s*(\[[\s\S]*?\])\s*,/);
+  if (!match) return [];
+
+  let rawItems: TsedeyRateItemRaw[] = [];
+  try {
+    const parsed = JSON.parse(match[1]);
+    if (!Array.isArray(parsed)) return [];
+    rawItems = parsed as TsedeyRateItemRaw[];
+  } catch {
+    return [];
+  }
+
+  const results: BankFxRateRecord[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const item of rawItems) {
+    const code = normalizeCurrencyCode(item.code || item.name || '');
+    if (!code) continue;
+
+    const rawCat = String(item.category || 'cash').toLowerCase();
+    const rateCategory: BankFxRateCategory =
+      rawCat.includes('non-cash') || rawCat.includes('transaction') ? 'transaction' : 'cash';
+    const pubDate = item.updated_at ? item.updated_at.slice(0, 10) : collectedAt.slice(0, 10);
+
+    const primaryKey = `${code}:${rateCategory}`;
+    if (!seenKeys.has(primaryKey)) {
+      const rec = buildValidatedFxRecord({
+        bank,
+        currencyCode: code,
+        currencyName: item.name,
+        rateCategory,
+        buyingRaw: item.buying_rate,
+        sellingRaw: item.selling_rate,
+        publishedDate: pubDate,
+        collectedAt,
+        sourceUrl: bank.fxPageUrl,
+        sourceType: 'official_api',
+      });
+      if (rec) {
+        seenKeys.add(primaryKey);
+        results.push(rec);
+      }
+    }
+
+    const weightedKey = `${code}:weighted_average`;
+    if (!seenKeys.has(weightedKey)) {
+      const weightedRec = buildValidatedFxRecord({
+        bank,
+        currencyCode: code,
+        currencyName: item.name,
+        rateCategory: 'weighted_average',
+        buyingRaw: item.weighted_average_buying,
+        sellingRaw: item.weighted_average_selling,
+        publishedDate: pubDate,
+        collectedAt,
+        sourceUrl: bank.fxPageUrl,
+        sourceType: 'official_api',
+      });
+      if (weightedRec) {
+        seenKeys.add(weightedKey);
+        results.push(weightedRec);
+      }
+    }
+  }
+
   return results;
 }
 

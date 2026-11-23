@@ -28,6 +28,7 @@ interface BankFxDashboardViewProps {
   syncedAt: string | null;
   isSyncing: boolean;
   isAdmin?: boolean;
+  errorMessage?: string | null;
   onRefresh: () => void;
   onOpenAdminSources: () => void;
 }
@@ -42,6 +43,7 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
   syncedAt,
   isSyncing,
   isAdmin = false,
+  errorMessage = null,
   onRefresh,
   onOpenAdminSources,
 }) => {
@@ -486,6 +488,24 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
       </section>
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+        {errorMessage && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-950"
+          >
+            <div className="flex items-center gap-2 font-medium">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="rounded-md bg-amber-900 px-3 py-1.5 font-semibold text-white hover:bg-amber-800"
+            >
+              Retry Live Sync
+            </button>
+          </div>
+        )}
         {/* Best Buying & Lowest Selling Strip (strictly within active category) */}
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white p-4">

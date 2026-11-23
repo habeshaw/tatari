@@ -18,6 +18,7 @@ import {
   parseNibBankHtml,
   parsePositiveRate,
   parseSiinqeeBankHtml,
+  parseTsedeyBankHtml,
   parseZamZamBankHtml,
   parseZemenApiRates,
 } from './fxAggregator';
@@ -427,3 +428,47 @@ test('computeMarketFxExtremes computes daily highest buying and lowest selling a
   assert.equal(cashExtremes[0].lowestSellingRate, 164.42);
   assert.equal(cashExtremes[0].lowestSellingBank, 'Dashen');
 });
+
+test('parseTsedeyBankHtml extracts cash, non-cash transaction, and weighted_average quotes without NO TRADE rows', () => {
+  const html = `
+    <div x-data='{ rates: [{"id":2,"name":"US DOLLAR","code":"USD","category":"non-cash","buying_rate":"162.2780","selling_rate":"165.5258","weighted_average_buying":"162.2780","weighted_average_selling":"165.5258","updated_at":"2026-11-23T05:43:00.000000Z"},{"id":8,"name":"US DOLLAR","code":"USD","category":"cash","buying_rate":"162.2780","selling_rate":"165.5236","weighted_average_buying":"162.2780","weighted_average_selling":"165.5236","updated_at":"2026-11-23T05:41:45.000000Z"},{"id":9,"name":"EURO","code":"EUR","category":"cash","buying_rate":"181.8390","selling_rate":"185.4758","weighted_average_buying":"NO TRADE","weighted_average_selling":"NO TRADE","updated_at":"2026-11-23T05:42:19.000000Z"}], activeTab: "cash" }'></div>
+  `;
+  const parsed = parseTsedeyBankHtml(html, SYNCED_AT);
+  assert.equal(parsed.length, 4);
+  assert.equal(parsed.find((r) => r.currencyCode === 'USD' && r.rateCategory === 'cash')?.sellingRate, 165.5236);
+  assert.equal(parsed.find((r) => r.currencyCode === 'USD' && r.rateCategory === 'transaction')?.sellingRate, 165.5258);
+  assert.equal(parsed.find((r) => r.currencyCode === 'USD' && r.rateCategory === 'weighted_average')?.buyingRate, 162.278);
+  assert.equal(parsed.some((r) => r.currencyCode === 'EUR' && r.rateCategory === 'weighted_average'), false);
+  assert.equal(parsed[0].publishedDate, '2026-11-23');
+  assert.equal(parsed[0].verificationStatus, 'Verified');
+});
+
+test('scoped FX date parsing ignores unrelated old news dates on Abay, Siinqee, and Enat pages', () => {
+  const abayHtml = `
+    <article>Old press release from February 6, 2020</article>
+    <section>FOREIGN CURRENCY EXCHANGE RATE 21 NOVEMBER 2026
+      <table><tr><th colspan="3">CASH RATE</th></tr><tr><td>USD</td><td>164.5118</td><td>167.8020</td></tr></table>
+    </section>
+  `;
+  const abay = parseAbayBankHtml(abayHtml, SYNCED_AT);
+  assert.equal(abay[0].publishedDate, '2026-11-21');
+  assert.equal(abay[0].verificationStatus, 'Verified');
+
+  const siinqeeHtml = `
+    <div>Archive notice August 14, 2025</div>
+    <h2>Exchange Rate 23-Nov-2026</h2>
+    <table><tr><th>Currency</th><th>Buying</th><th>Selling</th></tr><tr><td>USD</td><td>161.3585</td><td>164.5857</td></tr></table>
+  `;
+  const siinqee = parseSiinqeeBankHtml(siinqeeHtml, SYNCED_AT);
+  assert.equal(siinqee[0].publishedDate, '2026-11-23');
+  assert.equal(siinqee[0].verificationStatus, 'Verified');
+
+  const enatHtml = `
+    <div><h4>USD</h4></div><div><p>161.8481</p></div><div><p>165.0851</p></div>
+    <article>Annual report published May 16, 2025</article>
+  `;
+  const enat = parseEnatBankHtml(enatHtml, SYNCED_AT);
+  assert.equal(enat[0].publishedDate, '2026-11-23');
+  assert.equal(enat[0].verificationStatus, 'Verified');
+});
+

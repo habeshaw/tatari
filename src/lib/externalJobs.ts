@@ -27,8 +27,8 @@ export const EXTERNAL_JOB_SOURCES: ExternalJobSourceConfig[] = [
     id: 'geezjobs',
     name: 'GeezJobs',
     domain: 'geezjobs.com',
-    homeUrl: 'https://geezjobs.com/search-jobs',
-    feedUrl: 'https://geezjobs.com/search-jobs',
+    homeUrl: 'https://geezjobs.com/',
+    feedUrl: 'https://geezjobs.com/',
   },
   {
     id: 'effoysira',
@@ -333,33 +333,52 @@ export function parseGeezJobsHtml(
   html: string,
   fetchedAt: string = new Date().toISOString()
 ): JobListing[] {
-  const cards = html.split(/class="opportunity-card\b/i).slice(1);
+  const legacyCards = html.split(/class="opportunity-card\b/i).slice(1);
+  const articleCards =
+    legacyCards.length === 0
+      ? [...html.matchAll(/<article\b[^>]*>([\s\S]*?)<\/article>/gi)].map((m) => m[1])
+      : [];
+  const cards = legacyCards.length > 0 ? legacyCards : articleCards;
   if (cards.length === 0) return [];
 
   const nowMs = new Date(fetchedAt).getTime() || Date.now();
   const results: JobListing[] = [];
+  const seenHrefs = new Set<string>();
 
   for (const card of cards) {
-    const linkMatch = card.match(/<a\s+href="(\/job-detail\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    const linkMatch = card.match(
+      /<a\s+href="((?:https?:\/\/geezjobs\.com)?\/job-detail\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/i
+    );
     if (!linkMatch) continue;
 
-    const relHref = linkMatch[1].trim();
+    const relHref = linkMatch[1].trim().replace(/^https?:\/\/geezjobs\.com/i, '');
     const title = stripHtmlToText(linkMatch[2]);
-    if (!title || !relHref) continue;
+    if (!title || !relHref || seenHrefs.has(relHref)) continue;
+    seenHrefs.add(relHref);
 
     const sourceUrl = sanitizeHttpUrl(`https://geezjobs.com${relHref}`);
     if (!sourceUrl) continue;
 
-    const companyMatch = card.match(/<a\s+href="\/company\/[^"]+"[^>]*>([\s\S]*?)<\/a>/i);
+    const companyMatch = card.match(
+      /<a\s+href="(?:https?:\/\/geezjobs\.com)?\/company\/[^"]+"[^>]*>([\s\S]*?)<\/a>/i
+    );
     const companyName = companyMatch
       ? stripHtmlToText(companyMatch[1])
       : 'Not provided by source.';
 
-    const locMatch = card.match(/data-lucide="map-pin"[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i);
-    const rawLocation = locMatch
-      ? stripHtmlToText(locMatch[1]).replace(/\s*-\s*ethiopia/i, ', Ethiopia')
+    const locInlineMatch = card.match(/data-lucide="map-pin"[^>]*><\/i>\s*([^<\n]{2,60})/i);
+    const locSpanMatch = card.match(/data-lucide="map-pin"[^>]*>(?:<\/i>)?\s*<span[^>]*>([^<\n]{2,60})<\/span>/i);
+    const rawLocation = locSpanMatch
+      ? stripHtmlToText(locSpanMatch[1]).replace(/\s*-\s*ethiopia/i, ', Ethiopia')
+      : locInlineMatch
+      ? stripHtmlToText(locInlineMatch[1]).replace(/\s*-\s*ethiopia/i, ', Ethiopia')
       : 'Addis Ababa, Ethiopia';
     const location = rawLocation.replace(/\s+/g, ' ').trim() || 'Addis Ababa, Ethiopia';
+
+    const salaryInlineMatch = card.match(/data-lucide="banknote"[^>]*><\/i>\s*([^<\n]+)/i);
+    const salaryDisplay = salaryInlineMatch
+      ? stripHtmlToText(salaryInlineMatch[1]).replace(/birr$/i, ' ETB').trim() || 'Not provided by source.'
+      : 'Not provided by source.';
 
     const deadlineMatch = card.match(/Deadline:\s*([^<\n]+)/i);
     const deadline = deadlineMatch
@@ -377,17 +396,17 @@ export function parseGeezJobsHtml(
       titleEn: title,
       companyName,
       companyRating: 0,
-      location,
+      location: location.includes('Ethiopia') ? location : `${location}, Ethiopia`,
       remoteType: 'On-site',
       category,
       jobType: normalizeJobType(rawTypeText),
       experienceLevel: 'Not provided by source.',
       salaryMin: 0,
       salaryMax: 0,
-      salaryDisplay: 'Not provided by source.',
+      salaryDisplay,
       deadline,
       summaryEn: `${title} at ${companyName} (${location}). Collected from GeezJobs — open the original listing on geezjobs.com for full instructions.`,
-      descriptionEn: `This vacancy for ${title} at ${companyName} (${location}) was collected from GeezJobs.\n\nEmployment Type: ${rawTypeText}\nApplication Deadline: ${deadline}\n\nClick "View Original & Apply on GeezJobs" to inspect complete qualifications and submit your application on geezjobs.com.`,
+      descriptionEn: `This vacancy for ${title} at ${companyName} (${location}) was collected from GeezJobs.\n\nEmployment Type: ${rawTypeText}\nCompensation: ${salaryDisplay}\nApplication Deadline: ${deadline}\n\nClick "View Original & Apply on GeezJobs" to inspect complete qualifications and submit your application on geezjobs.com.`,
       requirements: [],
       benefits: [],
       easyApply: false,

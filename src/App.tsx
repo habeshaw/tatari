@@ -133,10 +133,13 @@ export default function App() {
   const [externalSources, setExternalSources] = useState<ExternalJobSourceStatus[]>([]);
   const [isSyncingExternal, setIsSyncingExternal] = useState(false);
   const [lastExternalSyncAt, setLastExternalSyncAt] = useState<string | null>(null);
+  const [externalJobsError, setExternalJobsError] = useState<string | null>(null);
   const [fxData, setFxData] = useState<BankFxApiResponse | null>(null);
   const [isSyncingFx, setIsSyncingFx] = useState(false);
+  const [fxError, setFxError] = useState<string | null>(null);
   const [oppData, setOppData] = useState<OpportunitiesApiResponse | null>(null);
   const [isSyncingOpp, setIsSyncingOpp] = useState(false);
+  const [oppError, setOppError] = useState<string | null>(null);
   const [aggregatorOverview, setAggregatorOverview] = useState<AggregatorOverviewResponse | null>(
     null
   );
@@ -169,10 +172,17 @@ export default function App() {
 
   const syncExternalJobs = async (forceRefresh: boolean = false, notifyUser: boolean = false) => {
     setIsSyncingExternal(true);
+    setExternalJobsError(null);
     try {
       const response = await fetch(`/api/external-jobs${forceRefresh ? '?refresh=1' : ''}`);
+      const contentType = response.headers.get('content-type') || '';
       if (!response.ok) {
-        throw new Error(`Feed sync returned HTTP ${response.status}`);
+        throw new Error(`Feed sync returned HTTP ${response.status}.`);
+      }
+      if (!contentType.includes('application/json')) {
+        throw new Error(
+          'External jobs API returned HTML instead of JSON. Ensure backend /api routes are running (npm start or Vercel Serverless Functions).'
+        );
       }
       const data = (await response.json()) as ExternalJobsApiResponse;
       const incomingJobs = Array.isArray(data.jobs) ? data.jobs : [];
@@ -206,6 +216,12 @@ export default function App() {
         };
       });
 
+      if (incomingJobs.length === 0) {
+        setExternalJobsError(
+          'External job portals returned 0 open vacancies right now. Click Retry Live Sync shortly.'
+        );
+      }
+
       if (notifyUser) {
         const activeNames = incomingSources
           .filter((s) => s.status === 'ok' && s.fetchedCount > 0)
@@ -218,9 +234,14 @@ export default function App() {
           incomingJobs.length === 0
         );
       }
-    } catch {
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Could not reach external Ethiopian job websites right now.';
+      setExternalJobsError(msg);
       if (notifyUser) {
-        showToast('Could not reach external Ethiopian job websites right now.', true);
+        showToast(msg, true);
       }
     } finally {
       setIsSyncingExternal(false);
@@ -235,6 +256,8 @@ export default function App() {
         headers: { authorization: `Bearer ${token}` },
       });
       if (!response.ok) return;
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) return;
       const data = (await response.json()) as AggregatorOverviewResponse;
       setAggregatorOverview(data);
     } catch {
@@ -244,15 +267,27 @@ export default function App() {
 
   const fetchFxRates = async (forceRefresh: boolean = false, notifyUser: boolean = false) => {
     setIsSyncingFx(true);
+    setFxError(null);
     try {
       const response = await fetch(`/api/fx-rates${forceRefresh ? '?refresh=1' : ''}`);
+      const contentType = response.headers.get('content-type') || '';
       if (!response.ok) {
-        throw new Error(`FX sync returned HTTP ${response.status}`);
+        throw new Error(`FX sync returned HTTP ${response.status}.`);
+      }
+      if (!contentType.includes('application/json')) {
+        throw new Error(
+          'Bank FX API returned HTML instead of JSON. Ensure backend /api routes are active.'
+        );
       }
       const data = (await response.json()) as BankFxApiResponse;
       setFxData(data);
+      const liveBanks = (data.bankStatuses || []).filter(
+        (b) => b.status === 'Verified' || b.status === 'Stale'
+      ).length;
+      if (data.rates.length === 0) {
+        setFxError('No commercial bank FX quotes were returned during the last sync.');
+      }
       if (notifyUser) {
-        const liveBanks = (data.bankStatuses || []).filter((b) => b.status === 'Verified').length;
         showToast(
           data.rates.length > 0
             ? `Collected ${data.rates.length} official FX quotes from ${liveBanks} live bank sources.`
@@ -260,9 +295,14 @@ export default function App() {
           data.rates.length === 0
         );
       }
-    } catch {
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Could not reach live Ethiopian bank FX sources right now.';
+      setFxError(msg);
       if (notifyUser) {
-        showToast('Could not reach live Ethiopian bank FX sources right now.', true);
+        showToast(msg, true);
       }
     } finally {
       setIsSyncingFx(false);
@@ -271,13 +311,23 @@ export default function App() {
 
   const fetchOpportunities = async (forceRefresh: boolean = false, notifyUser: boolean = false) => {
     setIsSyncingOpp(true);
+    setOppError(null);
     try {
       const response = await fetch(`/api/opportunities${forceRefresh ? '?refresh=1' : ''}`);
+      const contentType = response.headers.get('content-type') || '';
       if (!response.ok) {
-        throw new Error(`Opportunities sync returned HTTP ${response.status}`);
+        throw new Error(`Opportunities sync returned HTTP ${response.status}.`);
+      }
+      if (!contentType.includes('application/json')) {
+        throw new Error(
+          'Opportunities API returned HTML instead of JSON. Ensure backend /api routes are active.'
+        );
       }
       const data = (await response.json()) as OpportunitiesApiResponse;
       setOppData(data);
+      if (data.items.length === 0) {
+        setOppError('External opportunity publishers returned 0 live items during the last sync.');
+      }
       if (notifyUser) {
         showToast(
           data.items.length > 0
@@ -286,9 +336,14 @@ export default function App() {
           data.items.length === 0
         );
       }
-    } catch {
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Could not reach external Ethiopian opportunity feeds right now.';
+      setOppError(msg);
       if (notifyUser) {
-        showToast('Could not reach external Ethiopian opportunity feeds right now.', true);
+        showToast(msg, true);
       }
     } finally {
       setIsSyncingOpp(false);
@@ -1868,6 +1923,7 @@ export default function App() {
             externalSources={externalSources}
             isSyncingExternal={isSyncingExternal}
             lastExternalSyncAt={lastExternalSyncAt}
+            externalSyncError={externalJobsError}
             onSyncExternalJobs={() => void syncExternalJobs(true, true)}
             onToggleLanguage={handleToggleLanguage}
             onToggleSaveJob={handleToggleSaveJob}
@@ -1885,6 +1941,7 @@ export default function App() {
             syncedAt={fxData?.syncedAt || null}
             isSyncing={isSyncingFx}
             isAdmin={isAdmin}
+            errorMessage={fxError}
             onRefresh={() => void fetchFxRates(true, true)}
             onOpenAdminSources={openAdminSourcesPanel}
           />
@@ -1902,6 +1959,7 @@ export default function App() {
             syncedAt={oppData?.syncedAt || null}
             isSyncing={isSyncingOpp}
             isAdmin={isAdmin}
+            errorMessage={oppError}
             onRefresh={() => void fetchOpportunities(true, true)}
             onToggleSaveOpportunity={handleToggleSaveOpportunity}
             onNavigateView={navigateView}

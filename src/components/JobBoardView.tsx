@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   Bookmark,
   Briefcase,
   Building2,
@@ -34,6 +35,7 @@ interface JobBoardViewProps {
   externalSources?: ExternalJobSourceStatus[];
   isSyncingExternal?: boolean;
   lastExternalSyncAt?: string | null;
+  externalSyncError?: string | null;
   onSyncExternalJobs?: () => void;
   onToggleLanguage: (lang: Language) => void;
   onToggleSaveJob: (jobId: string) => void;
@@ -50,6 +52,7 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
   externalSources = [],
   isSyncingExternal = false,
   lastExternalSyncAt = null,
+  externalSyncError = null,
   onSyncExternalJobs,
   onToggleLanguage,
   onToggleSaveJob,
@@ -604,6 +607,26 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
 
       {/* Master-Detail Split Job Board */}
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {externalSyncError && (
+          <div
+            role="alert"
+            className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-950"
+          >
+            <div className="flex items-center gap-2 font-medium">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" />
+              <span>{externalSyncError}</span>
+            </div>
+            {onSyncExternalJobs && (
+              <button
+                type="button"
+                onClick={onSyncExternalJobs}
+                className="rounded-md bg-amber-900 px-3 py-1.5 font-semibold text-white hover:bg-amber-800"
+              >
+                Retry Live Sync
+              </button>
+            )}
+          </div>
+        )}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span className="tabular-nums font-medium">
             Showing {visibleJobs.length} {visibleJobs.length === 1 ? 'job' : 'jobs'}
