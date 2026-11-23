@@ -27,6 +27,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   const navItems: { id: AppView; label: string }[] = [
     { id: 'jobs', label: t.navJobs },
+    { id: 'fx', label: t.navFx },
+    { id: 'opportunities', label: t.navOpportunities },
     { id: 'training', label: t.navTraining },
     { id: 'store', label: t.navStore },
     { id: 'activity', label: t.navActivity },
@@ -47,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         {/* Zone 1: Single-line Brand Wordmark */}
         <button
           type="button"
@@ -60,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Zone 2: Concise single-line navigation links */}
         <nav
           aria-label="Primary Navigation"
-          className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600"
+          className="hidden lg:flex items-center gap-5 text-sm font-medium text-slate-600"
         >
           {navItems.map((item) => {
             const isActive = activeView === item.id;
@@ -69,7 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => handleNavClick(item.id)}
-                className={`relative py-5 text-sm font-medium whitespace-nowrap shrink-0 transition-colors focus-visible:outline-2 focus-visible:outline-[#164081] ${
+                className={`relative py-5 text-[13px] font-medium whitespace-nowrap shrink-0 transition-colors focus-visible:outline-2 focus-visible:outline-[#164081] ${
                   isActive
                     ? 'text-[#164081] font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
@@ -114,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={mobileMenuOpen}
             onClick={() => setMobileMenuOpen((prev) => !prev)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 md:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 lg:hidden"
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -125,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
       {mobileMenuOpen && (
         <nav
           aria-label="Mobile Navigation"
-          className="border-t border-slate-200 bg-white px-4 py-3 md:hidden"
+          className="border-t border-slate-200 bg-white px-4 py-3 lg:hidden"
         >
           <div className="flex flex-col gap-1">
             {navItems.map((item) => {

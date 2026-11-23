@@ -1,4 +1,5 @@
 import type {
+  DataVerificationStatus,
   ExternalJobSourceId,
   ExternalJobSourceStatus,
   JobListing,
@@ -34,7 +35,7 @@ export const EXTERNAL_JOB_SOURCES: ExternalJobSourceConfig[] = [
     name: 'EffoySira',
     domain: 'effoysira.com',
     homeUrl: 'https://effoysira.com',
-    feedUrl: 'https://effoysira.com/wp-json/wp/v2/posts?per_page=10',
+    feedUrl: 'https://effoysira.com/wp-json/wp/v2/posts?per_page=12',
   },
 ];
 
@@ -96,6 +97,59 @@ export function stripHtmlToText(html: string): string {
     .trim();
 }
 
+export function sanitizeHttpUrl(rawUrl: string): string | null {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function buildContentFingerprint(parts: Array<string | null | undefined>): string {
+  const normalized = parts
+    .map((p) =>
+      String(p || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\u1200-\u137f]+/gi, ' ')
+        .trim()
+    )
+    .filter(Boolean)
+    .join('|');
+  let hash = 2166136261;
+  for (let i = 0; i < normalized.length; i++) {
+    hash ^= normalized.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fp-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+export function isDeadlineExpired(
+  deadlineText: string | null | undefined,
+  nowMs: number = Date.now()
+): boolean {
+  if (!deadlineText) return false;
+  const trimmed = deadlineText.trim();
+  if (
+    !trimmed ||
+    /not provided|see original|open until|subscription/i.test(trimmed)
+  ) {
+    return false;
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return false;
+  // Treat a date-only deadline as valid through the end of that UTC day
+  const endOfDayMs = /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
+    ? parsed.getTime() + 24 * 60 * 60 * 1000 - 1
+    : parsed.getTime();
+  return endOfDayMs < nowMs;
+}
+
 export function normalizeCategoryFromText(text: string): string {
   const lower = text.toLowerCase();
   if (
@@ -150,10 +204,10 @@ function normalizeExperienceLevel(raw: unknown): string {
   if (s === '2') return 'Mid-Level';
   if (s === '3') return 'Senior-Level';
   if (s === '4') return 'Management / Lead';
-  return s || 'Mid-Level';
+  return s || 'Not provided by source.';
 }
 
-function normalizeIsoDateOnly(raw: unknown, fallback: string = 'Open until filled'): string {
+function normalizeIsoDateOnly(raw: unknown, fallback: string = 'Not provided by source.'): string {
   if (!raw) return fallback;
   const parsed = new Date(String(raw));
   if (Number.isNaN(parsed.getTime())) {
@@ -205,31 +259,38 @@ export function parseEthiojobsHtml(
   )?.props?.pageProps?.jobs?.data;
   if (!Array.isArray(jobsData)) return [];
 
+  const nowMs = new Date(fetchedAt).getTime() || Date.now();
   const results: JobListing[] = [];
+
   for (const item of jobsData) {
     const title = decodeHtmlEntities(String(item.title || '')).trim();
     const slug = String(item.slug || '').trim();
     if (!title || !slug) continue;
 
+    const sourceUrl = sanitizeHttpUrl(`https://www.ethiojobs.net/job/${slug.replace(/^\/+/, '')}`);
+    if (!sourceUrl) continue;
+
     const companyName =
-      decodeHtmlEntities(String(item.company?.name || '')).trim() || 'Ethiopian Employer';
+      decodeHtmlEntities(String(item.company?.name || '')).trim() || 'Not provided by source.';
     const location = decodeHtmlEntities(String(item.state || '')).trim() || 'Ethiopia';
     const catalogNames = Array.isArray(item.catalogs)
       ? item.catalogs.map((c) => c.name || '').filter(Boolean).join(' ')
       : '';
     const plainDesc = stripHtmlToText(String(item.description || ''));
     const category = normalizeCategoryFromText(`${title} ${catalogNames}`);
-    const sourceUrl = `https://www.ethiojobs.net/job/${slug.replace(/^\/+/, '')}`;
     const publishedAt = item.date_published
       ? new Date(item.date_published).toISOString()
-      : fetchedAt;
+      : undefined;
+    const deadline = normalizeIsoDateOnly(item.date_expiry, 'Not provided by source.');
+    const expired = isDeadlineExpired(deadline, nowMs);
+    const verificationStatus: DataVerificationStatus = expired ? 'Expired' : 'Verified';
 
     results.push({
       id: safeSlugId('ext-ethiojobs', slug),
       employerEmail: 'aggregator@ethiojobs.net',
       titleEn: title,
       companyName,
-      companyRating: 4.5,
+      companyRating: 0,
       location: location.includes('Ethiopia') ? location : `${location}, Ethiopia`,
       remoteType: normalizeRemoteType(item.location_type),
       category,
@@ -237,11 +298,11 @@ export function parseEthiojobsHtml(
       experienceLevel: normalizeExperienceLevel(item.level),
       salaryMin: 0,
       salaryMax: 0,
-      salaryDisplay: 'As per employer scale',
-      deadline: normalizeIsoDateOnly(item.date_expiry, 'See original post'),
+      salaryDisplay: 'Not provided by source.',
+      deadline,
       summaryEn:
         plainDesc.slice(0, 180) ||
-        `${title} vacancy at ${companyName}, originally posted on Ethiojobs.`,
+        `${title} vacancy at ${companyName}. View the original posting on Ethiojobs.`,
       descriptionEn:
         plainDesc ||
         `${title} position at ${companyName}. Open the original posting on Ethiojobs (${sourceUrl}) for complete terms of reference and application steps.`,
@@ -250,13 +311,18 @@ export function parseEthiojobsHtml(
       easyApply: false,
       postingFeeEtb: 0,
       status: 'approved',
-      createdAt: publishedAt,
+      createdAt: publishedAt || fetchedAt,
       publishedAt,
       sourceType: 'external',
       sourceSite: 'Ethiojobs',
       sourceDomain: 'ethiojobs.net',
       sourceUrl,
       fetchedAt,
+      lastVerifiedAt: fetchedAt,
+      verificationStatus,
+      isExpired: expired,
+      isDemoSeed: false,
+      fingerprint: buildContentFingerprint([title, companyName, 'ethiojobs.net']),
     });
   }
 
@@ -270,7 +336,9 @@ export function parseGeezJobsHtml(
   const cards = html.split(/class="opportunity-card\b/i).slice(1);
   if (cards.length === 0) return [];
 
+  const nowMs = new Date(fetchedAt).getTime() || Date.now();
   const results: JobListing[] = [];
+
   for (const card of cards) {
     const linkMatch = card.match(/<a\s+href="(\/job-detail\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
     if (!linkMatch) continue;
@@ -279,22 +347,28 @@ export function parseGeezJobsHtml(
     const title = stripHtmlToText(linkMatch[2]);
     if (!title || !relHref) continue;
 
+    const sourceUrl = sanitizeHttpUrl(`https://geezjobs.com${relHref}`);
+    if (!sourceUrl) continue;
+
     const companyMatch = card.match(/<a\s+href="\/company\/[^"]+"[^>]*>([\s\S]*?)<\/a>/i);
-    const companyName = companyMatch ? stripHtmlToText(companyMatch[1]) : 'Ethiopian Employer';
+    const companyName = companyMatch
+      ? stripHtmlToText(companyMatch[1])
+      : 'Not provided by source.';
 
     const locMatch = card.match(/data-lucide="map-pin"[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i);
-    const rawLocation = locMatch ? stripHtmlToText(locMatch[1]).replace(/\s*-\s*ethiopia/i, ', Ethiopia') : 'Addis Ababa, Ethiopia';
+    const rawLocation = locMatch
+      ? stripHtmlToText(locMatch[1]).replace(/\s*-\s*ethiopia/i, ', Ethiopia')
+      : 'Addis Ababa, Ethiopia';
     const location = rawLocation.replace(/\s+/g, ' ').trim() || 'Addis Ababa, Ethiopia';
 
     const deadlineMatch = card.match(/Deadline:\s*([^<\n]+)/i);
     const deadline = deadlineMatch
       ? normalizeIsoDateOnly(deadlineMatch[1].trim(), deadlineMatch[1].trim())
-      : 'See original post';
+      : 'Not provided by source.';
+    const expired = isDeadlineExpired(deadline, nowMs);
 
     const jobTypeMatch = card.match(/data-lucide="briefcase"[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i);
     const rawTypeText = jobTypeMatch ? stripHtmlToText(jobTypeMatch[1]) : 'Full-time';
-
-    const sourceUrl = `https://geezjobs.com${relHref}`;
     const category = normalizeCategoryFromText(`${title} ${companyName}`);
 
     results.push({
@@ -302,30 +376,35 @@ export function parseGeezJobsHtml(
       employerEmail: 'aggregator@geezjobs.com',
       titleEn: title,
       companyName,
-      companyRating: 4.4,
+      companyRating: 0,
       location,
       remoteType: 'On-site',
       category,
       jobType: normalizeJobType(rawTypeText),
-      experienceLevel: 'Experienced',
+      experienceLevel: 'Not provided by source.',
       salaryMin: 0,
       salaryMax: 0,
-      salaryDisplay: 'Negotiable / As posted',
+      salaryDisplay: 'Not provided by source.',
       deadline,
-      summaryEn: `${title} at ${companyName} (${location}). Collected from GeezJobs — view the original posting on geezjobs.com for full instructions.`,
-      descriptionEn: `This vacancy for ${title} at ${companyName} (${location}) was collected from GeezJobs.\n\nEmployment Type: ${rawTypeText}\nApplication Deadline: ${deadline}\n\nClick "View Original & Apply on GeezJobs" below to inspect complete qualifications and submit your application directly on geezjobs.com.`,
+      summaryEn: `${title} at ${companyName} (${location}). Collected from GeezJobs — open the original listing on geezjobs.com for full instructions.`,
+      descriptionEn: `This vacancy for ${title} at ${companyName} (${location}) was collected from GeezJobs.\n\nEmployment Type: ${rawTypeText}\nApplication Deadline: ${deadline}\n\nClick "View Original & Apply on GeezJobs" to inspect complete qualifications and submit your application on geezjobs.com.`,
       requirements: [],
       benefits: [],
       easyApply: false,
       postingFeeEtb: 0,
       status: 'approved',
       createdAt: fetchedAt,
-      publishedAt: fetchedAt,
+      publishedAt: undefined,
       sourceType: 'external',
       sourceSite: 'GeezJobs',
       sourceDomain: 'geezjobs.com',
       sourceUrl,
       fetchedAt,
+      lastVerifiedAt: fetchedAt,
+      verificationStatus: expired ? 'Expired' : 'Verified',
+      isExpired: expired,
+      isDemoSeed: false,
+      fingerprint: buildContentFingerprint([title, companyName, 'geezjobs.com']),
     });
   }
 
@@ -336,6 +415,7 @@ export interface EffoySiraPostItem {
   id: number | string;
   date?: string;
   link?: string;
+  categories?: number[];
   title?: { rendered?: string };
   excerpt?: { rendered?: string };
   content?: { rendered?: string };
@@ -347,7 +427,7 @@ function extractEffoyCompany(title: string): string {
     .trim();
   return cleaned && cleaned.length >= 2 && cleaned.length < title.length
     ? cleaned
-    : 'Ethiopian Employer';
+    : 'Not provided by source.';
 }
 
 export function parseEffoySiraPosts(
@@ -359,10 +439,9 @@ export function parseEffoySiraPosts(
   const results: JobListing[] = [];
   for (const post of posts) {
     const title = decodeHtmlEntities(stripHtmlToText(String(post.title?.rendered || ''))).trim();
-    const sourceUrl = String(post.link || '').trim();
+    const sourceUrl = sanitizeHttpUrl(String(post.link || '').trim());
     if (!title || !sourceUrl) continue;
 
-    // Filter out pure non-job editorial posts if any appear
     const lowerTitle = title.toLowerCase();
     const isLikelyJob =
       lowerTitle.includes('vacancy') ||
@@ -378,7 +457,7 @@ export function parseEffoySiraPosts(
     );
     const excerptText = stripHtmlToText(String(post.excerpt?.rendered || ''));
     const companyName = extractEffoyCompany(title);
-    const publishedAt = post.date ? new Date(post.date).toISOString() : fetchedAt;
+    const publishedAt = post.date ? new Date(post.date).toISOString() : undefined;
     const category = normalizeCategoryFromText(`${title} ${excerptText}`);
 
     results.push({
@@ -386,16 +465,16 @@ export function parseEffoySiraPosts(
       employerEmail: 'aggregator@effoysira.com',
       titleEn: title,
       companyName,
-      companyRating: 4.3,
+      companyRating: 0,
       location: 'Ethiopia',
       remoteType: 'On-site',
       category,
       jobType: 'Full-time',
-      experienceLevel: 'All Levels',
+      experienceLevel: 'Not provided by source.',
       salaryMin: 0,
       salaryMax: 0,
-      salaryDisplay: 'See original announcement',
-      deadline: 'See original post',
+      salaryDisplay: 'Not provided by source.',
+      deadline: 'Not provided by source.',
       summaryEn:
         excerptText.slice(0, 180) ||
         `${title}. Collected from EffoySira — open the original link on effoysira.com to apply.`,
@@ -407,13 +486,18 @@ export function parseEffoySiraPosts(
       easyApply: false,
       postingFeeEtb: 0,
       status: 'approved',
-      createdAt: publishedAt,
+      createdAt: publishedAt || fetchedAt,
       publishedAt,
       sourceType: 'external',
       sourceSite: 'EffoySira',
       sourceDomain: 'effoysira.com',
       sourceUrl,
       fetchedAt,
+      lastVerifiedAt: fetchedAt,
+      verificationStatus: 'Verified',
+      isExpired: false,
+      isDemoSeed: false,
+      fingerprint: buildContentFingerprint([title, companyName, 'effoysira.com']),
     });
   }
 
@@ -453,7 +537,6 @@ export function mergeExternalJobs(
     );
   }
 
-  // Retain previously cached external jobs only if incoming batch was completely empty
   if (mergedExternal.length === 0) {
     return existingJobs;
   }

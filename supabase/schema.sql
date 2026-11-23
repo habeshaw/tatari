@@ -247,3 +247,250 @@ CREATE POLICY "Public access activity_logs" ON public.activity_logs FOR ALL USIN
 
 DROP POLICY IF EXISTS "Public access product_reviews" ON public.product_reviews;
 CREATE POLICY "Public access product_reviews" ON public.product_reviews FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================================
+-- PHASE 2+ UPGRADE MIGRATIONS (IDEMPOTENT)
+-- Rollback note: Drop newly added tables (training_*, aggregation_*, collection_*,
+-- aggregated_listings, bank_exchange_*, banks, currencies, user_saved_listings,
+-- user_alert_preferences) without touching core tables 1-8.
+-- ============================================================================
+
+-- 9. Tailored Corporate & Organizational Training Services
+CREATE TABLE IF NOT EXISTS public.training_programs (
+    id TEXT PRIMARY KEY,
+    title_en TEXT NOT NULL,
+    title_am TEXT,
+    category TEXT NOT NULL,
+    duration_days INTEGER NOT NULL DEFAULT 2,
+    duration_label TEXT NOT NULL,
+    target_audience TEXT NOT NULL DEFAULT '',
+    fee_per_cohort_etb NUMERIC NOT NULL DEFAULT 25000,
+    max_participants INTEGER NOT NULL DEFAULT 15,
+    delivery_modes TEXT[] NOT NULL DEFAULT '{}',
+    sector_focus TEXT[] NOT NULL DEFAULT '{}',
+    summary_en TEXT NOT NULL,
+    syllabus_modules TEXT[] NOT NULL DEFAULT '{}',
+    deliverables TEXT[] NOT NULL DEFAULT '{}',
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.training_requests (
+    id TEXT PRIMARY KEY,
+    requester_email TEXT NOT NULL,
+    organization_name TEXT NOT NULL,
+    organization_sector TEXT NOT NULL,
+    contact_person TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    program_id TEXT NOT NULL REFERENCES public.training_programs(id) ON DELETE RESTRICT,
+    program_title TEXT NOT NULL,
+    custom_topics TEXT NOT NULL,
+    team_size INTEGER NOT NULL CHECK (team_size BETWEEN 1 AND 250),
+    delivery_mode TEXT NOT NULL,
+    preferred_dates TEXT NOT NULL,
+    location_city TEXT NOT NULL,
+    estimated_fee_etb NUMERIC NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Submitted' CHECK (status IN ('Submitted', 'Scoped & Quoted', 'Approved & Scheduled', 'Completed', 'Declined')),
+    trainer_assigned TEXT,
+    proposal_notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ
+);
+
+-- 10. Centralized Aggregation Sources, Runs & Errors
+CREATE TABLE IF NOT EXISTS public.aggregation_sources (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    url TEXT NOT NULL,
+    module TEXT NOT NULL,
+    method TEXT NOT NULL,
+    frequency_label TEXT NOT NULL DEFAULT 'Every 30m',
+    terms_note TEXT NOT NULL DEFAULT 'Publicly accessible index',
+    active BOOLEAN NOT NULL DEFAULT true,
+    status TEXT NOT NULL DEFAULT 'Verified',
+    item_count INTEGER NOT NULL DEFAULT 0,
+    last_successful_at TIMESTAMPTZ,
+    last_failed_at TIMESTAMPTZ,
+    last_error TEXT,
+    is_custom BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.collection_runs (
+    id TEXT PRIMARY KEY,
+    started_at TIMESTAMPTZ NOT NULL,
+    finished_at TIMESTAMPTZ NOT NULL,
+    scope TEXT NOT NULL,
+    sources_checked INTEGER NOT NULL DEFAULT 0,
+    sources_succeeded INTEGER NOT NULL DEFAULT 0,
+    records_collected INTEGER NOT NULL DEFAULT 0,
+    duplicates_detected INTEGER NOT NULL DEFAULT 0,
+    errors_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS public.collection_errors (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    module TEXT NOT NULL,
+    message TEXT NOT NULL,
+    occurred_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 11. Aggregated Ethiopian Listings (Tenders, Scholarships, Grants, Internships, Notices, etc.)
+CREATE TABLE IF NOT EXISTS public.aggregated_listings (
+    id TEXT PRIMARY KEY,
+    module TEXT NOT NULL,
+    title TEXT NOT NULL,
+    organization TEXT NOT NULL DEFAULT 'Not provided by source.',
+    reference_number TEXT NOT NULL DEFAULT 'Not provided by source.',
+    category TEXT NOT NULL,
+    location TEXT NOT NULL DEFAULT 'Ethiopia',
+    eligibility_or_coverage TEXT NOT NULL DEFAULT 'Not provided by source.',
+    price_or_funding TEXT NOT NULL DEFAULT 'Not provided by source.',
+    deadline TEXT NOT NULL DEFAULT 'Not provided by source.',
+    published_at TIMESTAMPTZ,
+    collected_at TIMESTAMPTZ NOT NULL,
+    last_verified_at TIMESTAMPTZ NOT NULL,
+    source_id TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    source_domain TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    verification_status TEXT NOT NULL DEFAULT 'Verified',
+    is_expired BOOLEAN NOT NULL DEFAULT false,
+    fingerprint TEXT NOT NULL,
+    duplicate_of_id TEXT,
+    manually_corrected BOOLEAN NOT NULL DEFAULT false,
+    original_values JSONB,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_aggregated_listings_module_status
+    ON public.aggregated_listings (module, verification_status, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_aggregated_listings_fingerprint
+    ON public.aggregated_listings (fingerprint);
+
+-- 12. Ethiopian Banks, Currencies & Immutable Foreign Exchange Rate History
+CREATE TABLE IF NOT EXISTS public.banks (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    short_name TEXT NOT NULL,
+    is_central_bank BOOLEAN NOT NULL DEFAULT false,
+    official_website TEXT NOT NULL,
+    fx_page_url TEXT NOT NULL,
+    integration_method TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.currencies (
+    code TEXT PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.bank_exchange_rates (
+    id TEXT PRIMARY KEY,
+    bank_id TEXT NOT NULL REFERENCES public.banks(id) ON DELETE CASCADE,
+    currency_code TEXT NOT NULL,
+    currency_name TEXT NOT NULL,
+    rate_category TEXT NOT NULL CHECK (rate_category IN ('cash', 'transaction', 'weighted_average', 'nbe_reference')),
+    buying_rate NUMERIC,
+    selling_rate NUMERIC,
+    mid_rate NUMERIC,
+    spread_pct NUMERIC,
+    published_date TEXT,
+    collected_at TIMESTAMPTZ NOT NULL,
+    last_verified_at TIMESTAMPTZ NOT NULL,
+    source_url TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'official_html_table',
+    verification_status TEXT NOT NULL DEFAULT 'Verified',
+    freshness TEXT NOT NULL DEFAULT 'Fresh',
+    anomaly_flagged BOOLEAN NOT NULL DEFAULT false,
+    anomaly_reason TEXT,
+    manually_corrected BOOLEAN NOT NULL DEFAULT false,
+    original_extracted_buying NUMERIC,
+    original_extracted_selling NUMERIC,
+    UNIQUE (bank_id, currency_code, rate_category)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bank_fx_currency_category
+    ON public.bank_exchange_rates (currency_code, rate_category);
+
+CREATE TABLE IF NOT EXISTS public.bank_exchange_rate_history (
+    id TEXT PRIMARY KEY,
+    bank_id TEXT NOT NULL REFERENCES public.banks(id) ON DELETE CASCADE,
+    currency_code TEXT NOT NULL,
+    rate_category TEXT NOT NULL CHECK (rate_category IN ('cash', 'transaction', 'weighted_average', 'nbe_reference')),
+    buying_rate NUMERIC,
+    selling_rate NUMERIC,
+    published_date TEXT,
+    recorded_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    source_url TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bank_fx_history_lookup
+    ON public.bank_exchange_rate_history (bank_id, currency_code, rate_category, recorded_at DESC);
+
+-- 13. Saved Opportunity Listings & User Alert Preferences
+CREATE TABLE IF NOT EXISTS public.user_saved_listings (
+    id TEXT PRIMARY KEY,
+    user_email TEXT NOT NULL,
+    listing_id TEXT NOT NULL,
+    listing_type TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    UNIQUE (user_email, listing_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.user_alert_preferences (
+    user_email TEXT PRIMARY KEY,
+    preferred_modules TEXT[] NOT NULL DEFAULT '{}',
+    preferred_locations TEXT[] NOT NULL DEFAULT '{}',
+    email_alerts BOOLEAN NOT NULL DEFAULT false,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS & Secure Policies on New Tables
+ALTER TABLE public.training_programs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.training_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aggregation_sources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.collection_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.collection_errors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aggregated_listings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.banks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.currencies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bank_exchange_rates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bank_exchange_rate_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_saved_listings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_alert_preferences ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read verified aggregated_listings" ON public.aggregated_listings;
+CREATE POLICY "Public read verified aggregated_listings" ON public.aggregated_listings FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public read banks" ON public.banks;
+CREATE POLICY "Public read banks" ON public.banks FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public read currencies" ON public.currencies;
+CREATE POLICY "Public read currencies" ON public.currencies FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public read bank_exchange_rates" ON public.bank_exchange_rates;
+CREATE POLICY "Public read bank_exchange_rates" ON public.bank_exchange_rates FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public read bank_exchange_rate_history" ON public.bank_exchange_rate_history;
+CREATE POLICY "Public read bank_exchange_rate_history" ON public.bank_exchange_rate_history FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public read aggregation_sources" ON public.aggregation_sources;
+CREATE POLICY "Public read aggregation_sources" ON public.aggregation_sources FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public access training_programs" ON public.training_programs;
+CREATE POLICY "Public access training_programs" ON public.training_programs FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public access training_requests" ON public.training_requests;
+CREATE POLICY "Public access training_requests" ON public.training_requests FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public access user_saved_listings" ON public.user_saved_listings;
+CREATE POLICY "Public access user_saved_listings" ON public.user_saved_listings FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public access user_alert_preferences" ON public.user_alert_preferences;
+CREATE POLICY "Public access user_alert_preferences" ON public.user_alert_preferences FOR ALL USING (true) WITH CHECK (true);
+

@@ -33,6 +33,7 @@ export interface PlatformState {
   language: Language;
   jobs: JobListing[];
   savedJobIdsByUser: Record<string, string[]>;
+  savedOpportunityIdsByUser: Record<string, string[]>;
   applications: JobApplication[];
   products: DigitalProduct[];
   orders: MaterialOrder[];
@@ -73,6 +74,10 @@ export function getInitialPlatformState(): PlatformState {
           parsed.savedJobIdsByUser && typeof parsed.savedJobIdsByUser === 'object'
             ? parsed.savedJobIdsByUser
             : { 'abebe@tatari.et': ['job-103'] },
+        savedOpportunityIdsByUser:
+          parsed.savedOpportunityIdsByUser && typeof parsed.savedOpportunityIdsByUser === 'object'
+            ? parsed.savedOpportunityIdsByUser
+            : {},
         applications: Array.isArray(parsed.applications) ? parsed.applications : SEED_APPLICATIONS,
         products,
         orders: Array.isArray(parsed.orders) ? parsed.orders : SEED_ORDERS,
@@ -97,6 +102,7 @@ export function getInitialPlatformState(): PlatformState {
     language: 'en',
     jobs: SEED_JOBS,
     savedJobIdsByUser: { 'abebe@tatari.et': ['job-103'] },
+    savedOpportunityIdsByUser: {},
     applications: SEED_APPLICATIONS,
     products: SEED_PRODUCTS,
     orders: SEED_ORDERS,

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { canDownloadMaterial, formatCurrencyEtb, formatRelativeDays } from '../lib/storeLogic';
 import type {
+  AggregatedOpportunity,
   DigitalProduct,
   JobApplication,
   JobListing,
@@ -25,17 +26,21 @@ interface MyActivityViewProps {
   currentUserEmail: string;
   jobs: JobListing[];
   savedJobIds: string[];
+  opportunities?: AggregatedOpportunity[];
+  savedOpportunityIds?: string[];
   applications: JobApplication[];
   orders: MaterialOrder[];
   products: DigitalProduct[];
   receipts: PaymentReceipt[];
   trainingRequests: TrainingRequest[];
   onToggleSaveJob: (jobId: string) => void;
+  onToggleSaveOpportunity?: (oppId: string) => void;
   onApplyJob: (job: JobListing) => void;
   onDownloadMaterial: (product: DigitalProduct, order: MaterialOrder) => void;
   onDownloadInvoice: (receipt: PaymentReceipt) => void;
   onDownloadTrainingProposal: (request: TrainingRequest) => void;
   onBrowseJobs: () => void;
+  onBrowseOpportunities?: () => void;
   onBrowseStore: () => void;
   onBrowseTraining: () => void;
   onRequireAuth: () => void;
@@ -45,17 +50,21 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
   currentUserEmail,
   jobs,
   savedJobIds,
+  opportunities = [],
+  savedOpportunityIds = [],
   applications,
   orders,
   products,
   receipts,
   trainingRequests,
   onToggleSaveJob,
+  onToggleSaveOpportunity,
   onApplyJob,
   onDownloadMaterial,
   onDownloadInvoice,
   onDownloadTrainingProposal,
   onBrowseJobs,
+  onBrowseOpportunities,
   onBrowseStore,
   onBrowseTraining,
   onRequireAuth,
@@ -108,6 +117,10 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
   const savedJobs = jobs.filter(
     (j) => savedJobIds.includes(j.id) && j.status === 'approved'
   );
+  const savedOpportunities = opportunities.filter((o) =>
+    savedOpportunityIds.includes(o.id)
+  );
+  const totalSavedCount = savedJobs.length + savedOpportunities.length;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -162,7 +175,7 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Saved Jobs ({savedJobs.length})
+            Saved ({totalSavedCount})
           </button>
           <button
             type="button"
@@ -334,81 +347,146 @@ export const MyActivityView: React.FC<MyActivityViewProps> = ({
         </section>
       )}
 
-      {/* Tab 3: Saved Jobs */}
+      {/* Tab 3: Saved Jobs & Opportunities */}
       {tab === 'saved' && (
-        <section className="mt-6">
-          {savedJobs.length === 0 ? (
+        <section className="mt-6 space-y-6">
+          {totalSavedCount === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
               <Bookmark className="mx-auto h-9 w-9 text-slate-400" />
               <h2 className="mt-3 font-display text-base font-bold text-slate-900">
-                No saved jobs
+                No saved jobs or opportunities
               </h2>
               <p className="mt-1 text-sm text-slate-600">
-                Bookmark jobs from the search board to review and apply later.
+                Bookmark jobs, tenders, scholarships, or grants to review and act on them later.
               </p>
-              <button
-                type="button"
-                onClick={onBrowseJobs}
-                className="mt-4 rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
-              >
-                Browse Jobs
-              </button>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={onBrowseJobs}
+                  className="rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
+                >
+                  Browse Jobs
+                </button>
+                {onBrowseOpportunities && (
+                  <button
+                    type="button"
+                    onClick={onBrowseOpportunities}
+                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Browse Tenders &amp; Grants
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
-            <div className="space-y-3">
-              {savedJobs.map((job) => {
-                const isExternal = job.sourceType === 'external' && Boolean(job.sourceUrl);
-                const sourceName = job.sourceSite || 'Ethiopian Job Portal';
-                return (
-                  <article
-                    key={job.id}
-                    className="flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center"
-                  >
-                    <div>
-                      {isExternal && (
-                        <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-[#164081]">
-                          Source · {sourceName} ({job.sourceDomain})
-                        </div>
-                      )}
-                      <h2 className="font-display text-base font-bold text-slate-900">
-                        {job.titleEn}
-                      </h2>
-                      <p className="mt-1 text-xs text-slate-600 tabular-nums">
-                        {job.companyName} · {job.location} · {job.salaryDisplay}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => onToggleSaveJob(job.id)}
-                        className="rounded-lg border border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            <>
+              {savedJobs.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="font-display text-sm font-bold uppercase tracking-wider text-slate-600">
+                    Saved Jobs ({savedJobs.length})
+                  </h2>
+                  {savedJobs.map((job) => {
+                    const isExternal = job.sourceType === 'external' && Boolean(job.sourceUrl);
+                    const sourceName = job.sourceSite || 'Ethiopian Job Portal';
+                    return (
+                      <article
+                        key={job.id}
+                        className="flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center"
                       >
-                        Remove
-                      </button>
-                      {isExternal ? (
+                        <div>
+                          {isExternal && (
+                            <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-[#164081]">
+                              Source · {sourceName} ({job.sourceDomain})
+                            </div>
+                          )}
+                          <h3 className="font-display text-base font-bold text-slate-900">
+                            {job.titleEn}
+                          </h3>
+                          <p className="mt-1 text-xs text-slate-600 tabular-nums">
+                            {job.companyName} · {job.location} · {job.salaryDisplay}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => onToggleSaveJob(job.id)}
+                            className="rounded-lg border border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Remove
+                          </button>
+                          {isExternal ? (
+                            <a
+                              href={job.sourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61] whitespace-nowrap shrink-0"
+                            >
+                              <span>View on {sourceName}</span>
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onApplyJob(job)}
+                              className="rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
+                            >
+                              Apply now
+                            </button>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+
+              {savedOpportunities.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="font-display text-sm font-bold uppercase tracking-wider text-slate-600">
+                    Saved Tenders, Scholarships &amp; Grants ({savedOpportunities.length})
+                  </h2>
+                  {savedOpportunities.map((opp) => (
+                    <article
+                      key={opp.id}
+                      className="flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center"
+                    >
+                      <div>
+                        <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-[#164081]">
+                          {opp.category} · Source: {opp.sourceName} ({opp.sourceDomain}) ·{' '}
+                          {opp.verificationStatus}
+                        </div>
+                        <h3 className="font-display text-base font-bold text-slate-900">
+                          {opp.title}
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-600 tabular-nums">
+                          {opp.organization} · {opp.location} · Deadline: {opp.deadline}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        {onToggleSaveOpportunity && (
+                          <button
+                            type="button"
+                            onClick={() => onToggleSaveOpportunity(opp.id)}
+                            className="rounded-lg border border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Remove
+                          </button>
+                        )}
                         <a
-                          href={job.sourceUrl}
+                          href={opp.sourceUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61] whitespace-nowrap shrink-0"
                         >
-                          <span>View on {sourceName}</span>
+                          <span>View on {opp.sourceName}</span>
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onApplyJob(job)}
-                          className="rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
-                        >
-                          Apply now
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </section>
       )}

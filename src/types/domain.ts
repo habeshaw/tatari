@@ -4,7 +4,15 @@ export type UserRole = 'seeker' | 'employer' | 'admin';
 
 export type AccountStatus = 'pending' | 'approved' | 'suspended';
 
-export type AppView = 'jobs' | 'training' | 'store' | 'activity' | 'employer' | 'admin';
+export type AppView =
+  | 'jobs'
+  | 'fx'
+  | 'opportunities'
+  | 'training'
+  | 'store'
+  | 'activity'
+  | 'employer'
+  | 'admin';
 
 export type JobType = 'Full-time' | 'Part-time' | 'Contract' | 'Internship';
 
@@ -13,6 +21,18 @@ export type RemoteType = 'On-site' | 'Hybrid' | 'Remote';
 export type JobPostingTier = 'standard' | 'featured' | 'enterprise';
 
 export type JobModerationStatus = 'pending_approval' | 'approved' | 'rejected' | 'paused';
+
+export type DataVerificationStatus =
+  | 'New'
+  | 'Verified'
+  | 'Updated'
+  | 'Pending verification'
+  | 'Stale'
+  | 'Unverified'
+  | 'Expired'
+  | 'Closed'
+  | 'Source unavailable'
+  | 'Removed';
 
 export type ApplicationStage =
   | 'Submitted'
@@ -80,6 +100,11 @@ export interface JobListing {
   sourceDomain?: string;
   sourceUrl?: string;
   fetchedAt?: string;
+  lastVerifiedAt?: string;
+  verificationStatus?: DataVerificationStatus;
+  isExpired?: boolean;
+  isDemoSeed?: boolean;
+  fingerprint?: string;
 }
 
 export type ExternalJobSourceId = 'ethiojobs' | 'geezjobs' | 'effoysira';
@@ -278,3 +303,211 @@ export interface TrainingFilterCriteria {
   deliveryMode: string;
 }
 
+// ============================================================================
+// MODULE B: ETHIOPIAN BANK FOREIGN EXCHANGE AGGREGATOR TYPES
+// ============================================================================
+
+export type BankFxRateCategory =
+  | 'cash'
+  | 'transaction'
+  | 'weighted_average'
+  | 'nbe_reference';
+
+export interface BankFxRateRecord {
+  id: string;
+  bankId: string;
+  bankName: string;
+  bankShortName: string;
+  isCentralBank: boolean;
+  currencyCode: string;
+  currencyName: string;
+  rateCategory: BankFxRateCategory;
+  buyingRate: number | null;
+  sellingRate: number | null;
+  buyingPrecisionText?: string;
+  sellingPrecisionText?: string;
+  midRate: number | null;
+  spreadPct: number | null;
+  dailyChangeBuy: number | null;
+  dailyChangeSell: number | null;
+  publishedDate: string | null;
+  collectedAt: string;
+  lastVerifiedAt: string;
+  sourceUrl: string;
+  sourceType: 'official_api' | 'official_html_table' | 'admin_override';
+  verificationStatus: 'Verified' | 'Stale' | 'Unverified';
+  freshness: 'Fresh' | 'Stale' | 'Outdated';
+  anomalyFlagged?: boolean;
+  anomalyReason?: string;
+  manuallyCorrected?: boolean;
+  originalExtractedBuying?: number | null;
+  originalExtractedSelling?: number | null;
+}
+
+export interface BankFxHistoryPoint {
+  id: string;
+  bankId: string;
+  currencyCode: string;
+  rateCategory: BankFxRateCategory;
+  buyingRate: number | null;
+  sellingRate: number | null;
+  publishedDate: string | null;
+  recordedAt: string;
+  sourceUrl: string;
+}
+
+export interface BankFxSourceStatus {
+  bankId: string;
+  bankName: string;
+  bankShortName: string;
+  isCentralBank: boolean;
+  officialWebsite: string;
+  fxPageUrl: string;
+  method: 'official_api' | 'official_html_table' | 'js_rendered' | 'unreachable_blocked';
+  status: 'Verified' | 'Stale' | 'Collection failed' | 'Source unavailable';
+  currenciesCollected: number;
+  publishedDate: string | null;
+  lastCheckedAt: string;
+  lastSuccessAt?: string | null;
+  errorMessage?: string;
+}
+
+export interface NbeIndicativeMidRate {
+  price: number;
+  dateText: string;
+  sourceUrl: string;
+  collectedAt: string;
+}
+
+export interface BankFxApiResponse {
+  rates: BankFxRateRecord[];
+  history: BankFxHistoryPoint[];
+  bankStatuses: BankFxSourceStatus[];
+  nbeIndicativeMid: NbeIndicativeMidRate | null;
+  syncedAt: string;
+  cached?: boolean;
+}
+
+// ============================================================================
+// MODULES C–P: CENTRALIZED OPPORTUNITY & INFORMATION AGGREGATION TYPES
+// ============================================================================
+
+export type OpportunityModuleType =
+  | 'tenders'
+  | 'scholarships'
+  | 'grants'
+  | 'internships'
+  | 'training_external'
+  | 'events'
+  | 'public_announcements'
+  | 'agriculture'
+  | 'trade'
+  | 'business_directory'
+  | 'real_estate'
+  | 'vehicles'
+  | 'certifications';
+
+export interface AggregatedOpportunity {
+  id: string;
+  module: OpportunityModuleType;
+  title: string;
+  organization: string;
+  referenceNumber: string;
+  category: string;
+  location: string;
+  eligibilityOrCoverage: string;
+  priceOrFunding: string;
+  deadline: string;
+  publishedAt: string | null;
+  collectedAt: string;
+  lastVerifiedAt: string;
+  sourceId: string;
+  sourceName: string;
+  sourceDomain: string;
+  sourceUrl: string;
+  summary: string;
+  verificationStatus: DataVerificationStatus;
+  isExpired: boolean;
+  fingerprint: string;
+  duplicateOfId?: string;
+  manuallyCorrected?: boolean;
+  manuallyVerified?: boolean;
+  originalValues?: {
+    title?: string;
+    organization?: string;
+    deadline?: string;
+  };
+}
+
+export type SourceCollectionMethod =
+  | 'official_api'
+  | 'wp_rest_json'
+  | 'inertia_json'
+  | 'html_table'
+  | 'html_cards'
+  | 'rss_xml'
+  | 'rss_atom'
+  | 'unavailable';
+
+export interface AggregationSourceRecord {
+  id: string;
+  name: string;
+  domain: string;
+  url: string;
+  feedUrl: string;
+  module: OpportunityModuleType | 'jobs' | 'fx';
+  method: SourceCollectionMethod;
+  frequencyLabel: string;
+  termsNote: string;
+  active: boolean;
+  status: 'Verified' | 'Stale' | 'Collection failed' | 'Source unavailable' | 'Paused' | 'Unverified';
+  fetchedCount: number;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastError?: string;
+  isCustom?: boolean;
+}
+
+export interface CollectionRunEntry {
+  id: string;
+  startedAt: string;
+  completedAt: string;
+  scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'single';
+  itemsCollected: number;
+  duplicatesSkipped: number;
+  failedSources: number;
+  durationMs: number;
+  status: 'success' | 'partial' | 'failed';
+}
+
+export interface CollectionErrorEntry {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  module: string;
+  reason: string;
+  timestamp: string;
+}
+
+export interface OpportunitiesApiResponse {
+  items: AggregatedOpportunity[];
+  sources: AggregationSourceRecord[];
+  collectionRuns: CollectionRunEntry[];
+  collectionErrors: CollectionErrorEntry[];
+  syncedAt: string;
+  cached?: boolean;
+}
+
+export interface AggregatorOverviewResponse {
+  jobSources: ExternalJobSourceStatus[];
+  fxBankStatuses: BankFxSourceStatus[];
+  opportunitySources: AggregationSourceRecord[];
+  collectionRuns: CollectionRunEntry[];
+  collectionErrors: CollectionErrorEntry[];
+  countsByModule: Record<string, number>;
+  totalCollectedListings: number;
+  duplicatesDetected: number;
+  expiredCount: number;
+  anomaliesCount: number;
+  lastFullSyncAt: string | null;
+}

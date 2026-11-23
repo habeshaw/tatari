@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { AdminConsoleView } from './components/AdminConsoleView';
+import { BankFxDashboardView } from './components/BankFxDashboardView';
 import { DigitalStoreView } from './components/DigitalStoreView';
 import { EmployerHubView } from './components/EmployerHubView';
 import { Header } from './components/Header';
@@ -17,6 +18,7 @@ import {
   PaymentCheckoutModal,
 } from './components/Modals';
 import { MyActivityView } from './components/MyActivityView';
+import { OpportunitiesHubView } from './components/OpportunitiesHubView';
 import { TrainingServicesView } from './components/TrainingServicesView';
 import {
   deleteJobFromSupabase,
@@ -81,14 +83,19 @@ import {
 } from './lib/trainingLogic';
 import type {
   AccountStatus,
+  AggregatedOpportunity,
+  AggregatorOverviewResponse,
   ApplicationStage,
   AppView,
+  BankFxApiResponse,
   DigitalProduct,
   ExternalJobSourceStatus,
   JobListing,
   JobModerationStatus,
   Language,
   MaterialOrder,
+  OpportunitiesApiResponse,
+  OpportunityModuleType,
   PaymentReceipt,
   TrainingProposalStatus,
   TrainingRequest,
@@ -126,6 +133,17 @@ export default function App() {
   const [externalSources, setExternalSources] = useState<ExternalJobSourceStatus[]>([]);
   const [isSyncingExternal, setIsSyncingExternal] = useState(false);
   const [lastExternalSyncAt, setLastExternalSyncAt] = useState<string | null>(null);
+  const [fxData, setFxData] = useState<BankFxApiResponse | null>(null);
+  const [isSyncingFx, setIsSyncingFx] = useState(false);
+  const [oppData, setOppData] = useState<OpportunitiesApiResponse | null>(null);
+  const [isSyncingOpp, setIsSyncingOpp] = useState(false);
+  const [aggregatorOverview, setAggregatorOverview] = useState<AggregatorOverviewResponse | null>(
+    null
+  );
+  const [isSyncingAggregator, setIsSyncingAggregator] = useState(false);
+  const [adminRequestedTab, setAdminRequestedTab] = useState<
+    'payments' | 'jobs' | 'store' | 'training' | 'sources' | 'users' | undefined
+  >(undefined);
   const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
 
   const showToast = (message: string, isError: boolean = false) => {
@@ -208,6 +226,70 @@ export default function App() {
     }
   };
 
+  const refreshAggregatorOverview = async () => {
+    try {
+      const response = await fetch('/api/aggregator/overview');
+      if (!response.ok) return;
+      const data = (await response.json()) as AggregatorOverviewResponse;
+      setAggregatorOverview(data);
+    } catch {
+      // Non-blocking overview fetch
+    }
+  };
+
+  const fetchFxRates = async (forceRefresh: boolean = false, notifyUser: boolean = false) => {
+    setIsSyncingFx(true);
+    try {
+      const response = await fetch(`/api/fx-rates${forceRefresh ? '?refresh=1' : ''}`);
+      if (!response.ok) {
+        throw new Error(`FX sync returned HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as BankFxApiResponse;
+      setFxData(data);
+      if (notifyUser) {
+        const liveBanks = (data.bankStatuses || []).filter((b) => b.status === 'Verified').length;
+        showToast(
+          data.rates.length > 0
+            ? `Collected ${data.rates.length} official FX quotes from ${liveBanks} live bank sources.`
+            : 'No verified commercial FX feeds returned right now.',
+          data.rates.length === 0
+        );
+      }
+    } catch {
+      if (notifyUser) {
+        showToast('Could not reach live Ethiopian bank FX sources right now.', true);
+      }
+    } finally {
+      setIsSyncingFx(false);
+    }
+  };
+
+  const fetchOpportunities = async (forceRefresh: boolean = false, notifyUser: boolean = false) => {
+    setIsSyncingOpp(true);
+    try {
+      const response = await fetch(`/api/opportunities${forceRefresh ? '?refresh=1' : ''}`);
+      if (!response.ok) {
+        throw new Error(`Opportunities sync returned HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as OpportunitiesApiResponse;
+      setOppData(data);
+      if (notifyUser) {
+        showToast(
+          data.items.length > 0
+            ? `Synced ${data.items.length} verified tenders, scholarships, grants & public notices.`
+            : 'No external opportunity records returned right now.',
+          data.items.length === 0
+        );
+      }
+    } catch {
+      if (notifyUser) {
+        showToast('Could not reach external Ethiopian opportunity feeds right now.', true);
+      }
+    } finally {
+      setIsSyncingOpp(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
     syncWithSupabaseIfAvailable().then((res) => {
@@ -223,6 +305,9 @@ export default function App() {
       }));
     });
     void syncExternalJobs(false, false);
+    void fetchFxRates(false, false);
+    void fetchOpportunities(false, false);
+    void refreshAggregatorOverview();
     return () => {
       active = false;
     };
@@ -237,6 +322,10 @@ export default function App() {
 
   const currentSavedJobIds = currentUser
     ? state.savedJobIdsByUser[currentUser.email.toLowerCase()] || []
+    : [];
+
+  const currentSavedOpportunityIds = currentUser
+    ? state.savedOpportunityIdsByUser[currentUser.email.toLowerCase()] || []
     : [];
 
   const pendingApprovalCount =
@@ -284,6 +373,33 @@ export default function App() {
         ...prev,
         savedJobIdsByUser: {
           ...prev.savedJobIdsByUser,
+          [emailKey]: nextSaved,
+        },
+      };
+    });
+  };
+
+  const handleToggleSaveOpportunity = (oppId: string) => {
+    const access = canAccessActivity(currentUser, 'save_job');
+    if (!access.allowed || !currentUser) {
+      openAuthModal({
+        mode: 'signup',
+        role: 'seeker',
+        notice:
+          'Sign in or register an account to bookmark tenders, scholarships, grants, and public opportunities.',
+      });
+      return;
+    }
+
+    const emailKey = currentUser.email.toLowerCase();
+    setState((prev) => {
+      const existing = prev.savedOpportunityIdsByUser[emailKey] || [];
+      const exists = existing.includes(oppId);
+      const nextSaved = exists ? existing.filter((id) => id !== oppId) : [oppId, ...existing];
+      return {
+        ...prev,
+        savedOpportunityIdsByUser: {
+          ...prev.savedOpportunityIdsByUser,
           [emailKey]: nextSaved,
         },
       };
@@ -1488,11 +1604,159 @@ export default function App() {
     showToast(`Tailored proposal ${file.filename} downloaded.`);
   };
 
+  const handleTriggerAggregatorSync = async (
+    scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'single',
+    sourceId?: string
+  ) => {
+    setIsSyncingAggregator(true);
+    try {
+      const res = await fetch('/api/aggregator/sync', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ scope, sourceId }),
+      });
+      if (!res.ok) {
+        throw new Error(`Sync failed (${res.status})`);
+      }
+      const data = (await res.json()) as { ok: boolean; overview?: AggregatorOverviewResponse };
+      if (data.overview) setAggregatorOverview(data.overview);
+
+      if (scope === 'all' || scope === 'jobs') await syncExternalJobs(false, false);
+      if (scope === 'all' || scope === 'fx') await fetchFxRates(false, false);
+      if (scope === 'all' || scope === 'opportunities' || scope === 'single') {
+        await fetchOpportunities(false, false);
+      }
+      await refreshAggregatorOverview();
+      showToast('Live Ethiopian source collection completed.');
+    } catch {
+      showToast('Aggregator sync failed for one or more sources.', true);
+    } finally {
+      setIsSyncingAggregator(false);
+    }
+  };
+
+  const handleAddCustomSource = async (payload: {
+    name: string;
+    url: string;
+    feedUrl: string;
+    module: OpportunityModuleType;
+    method: 'wp_rest_json' | 'rss_xml';
+  }): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/aggregator/sources', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json()) as {
+        error?: string;
+        itemsAdded?: number;
+        overview?: AggregatorOverviewResponse;
+      };
+      if (!res.ok) {
+        return data.error || `Failed to register source (HTTP ${res.status}).`;
+      }
+      if (data.overview) setAggregatorOverview(data.overview);
+      await fetchOpportunities(false, false);
+      await refreshAggregatorOverview();
+      showToast(
+        `Registered source "${payload.name}" (${data.itemsAdded ?? 0} verified items collected).`
+      );
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Unable to register custom source.';
+    }
+  };
+
+  const handleToggleSourceActive = async (sourceId: string, nextActive: boolean) => {
+    try {
+      const res = await fetch(`/api/aggregator/sources/${encodeURIComponent(sourceId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ active: nextActive }),
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { overview?: AggregatorOverviewResponse };
+      if (data.overview) setAggregatorOverview(data.overview);
+      await fetchOpportunities(false, false);
+      showToast(`Source ${nextActive ? 'activated' : 'paused'}.`);
+    } catch {
+      showToast('Unable to update source state.', true);
+    }
+  };
+
+  const handleReviewFxRate = async (
+    rateId: string,
+    buyingRate: number | null,
+    sellingRate: number | null
+  ) => {
+    try {
+      const res = await fetch(`/api/aggregator/fx/${encodeURIComponent(rateId)}/review`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ buyingRate, sellingRate }),
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { ok: boolean; rate?: BankFxApiResponse['rates'][number] };
+      if (data.rate) {
+        setFxData((prev) =>
+          prev
+            ? {
+                ...prev,
+                rates: prev.rates.map((r) => (r.id === rateId ? data.rate! : r)),
+              }
+            : prev
+        );
+      }
+      await refreshAggregatorOverview();
+      showToast('FX rate verified and anomaly cleared.');
+    } catch {
+      showToast('Failed to review FX rate.', true);
+    }
+  };
+
+  const handleVerifyOpportunity = async (
+    oppId: string,
+    updates: { title: string; organization: string; deadline: string }
+  ) => {
+    try {
+      const res = await fetch(`/api/aggregator/listings/${encodeURIComponent(oppId)}/verify`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { ok: boolean; item?: AggregatedOpportunity };
+      if (data.item) {
+        setOppData((prev) =>
+          prev
+            ? {
+                ...prev,
+                items: prev.items.map((o) => (o.id === oppId ? data.item! : o)),
+              }
+            : prev
+        );
+      }
+      await refreshAggregatorOverview();
+      showToast('Listing verified with original source preservation.');
+    } catch {
+      showToast('Failed to verify aggregated listing.', true);
+    }
+  };
+
   const navigateView = (view: AppView) => {
+    if (view !== 'admin') {
+      setAdminRequestedTab(undefined);
+    }
     setActiveView(view);
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'auto' });
     }
+  };
+
+  const openAdminSourcesPanel = () => {
+    setAdminRequestedTab('sources');
+    navigateView('admin');
   };
 
   return (
@@ -1526,10 +1790,44 @@ export default function App() {
           />
         )}
 
+        {activeView === 'fx' && (
+          <BankFxDashboardView
+            rates={fxData?.rates || []}
+            history={fxData?.history || []}
+            bankStatuses={fxData?.bankStatuses || []}
+            nbeIndicativeMid={fxData?.nbeIndicativeMid || null}
+            syncedAt={fxData?.syncedAt || null}
+            isSyncing={isSyncingFx}
+            onRefresh={() => void fetchFxRates(true, true)}
+            onOpenAdminSources={openAdminSourcesPanel}
+          />
+        )}
+
+        {activeView === 'opportunities' && (
+          <OpportunitiesHubView
+            opportunities={oppData?.items || []}
+            sources={oppData?.sources || aggregatorOverview?.opportunitySources || []}
+            jobs={state.jobs}
+            fxRates={fxData?.rates || []}
+            trainingPrograms={state.trainingPrograms}
+            products={state.products}
+            savedOpportunityIds={currentSavedOpportunityIds}
+            syncedAt={oppData?.syncedAt || null}
+            isSyncing={isSyncingOpp}
+            onRefresh={() => void fetchOpportunities(true, true)}
+            onToggleSaveOpportunity={handleToggleSaveOpportunity}
+            onNavigateView={navigateView}
+            onOpenAdminSources={openAdminSourcesPanel}
+          />
+        )}
+
         {activeView === 'training' && (
           <TrainingServicesView
             programs={state.trainingPrograms}
             requests={state.trainingRequests}
+            externalCourses={(oppData?.items || []).filter(
+              (o) => o.module === 'training_external' || o.module === 'scholarships'
+            )}
             currentUser={currentUser}
             language={state.language}
             onToggleLanguage={handleToggleLanguage}
@@ -1564,19 +1862,23 @@ export default function App() {
             currentUserEmail={state.currentUserEmail}
             jobs={state.jobs}
             savedJobIds={currentSavedJobIds}
+            opportunities={oppData?.items || []}
+            savedOpportunityIds={currentSavedOpportunityIds}
             applications={state.applications}
             orders={state.orders}
             products={state.products}
             receipts={state.receipts}
             trainingRequests={state.trainingRequests}
             onToggleSaveJob={handleToggleSaveJob}
+            onToggleSaveOpportunity={handleToggleSaveOpportunity}
             onApplyJob={(job) => setApplyModalJob(job)}
             onDownloadMaterial={handleDownloadMaterial}
             onDownloadInvoice={handleDownloadInvoice}
             onDownloadTrainingProposal={handleDownloadTrainingProposal}
-            onBrowseJobs={() => setActiveView('jobs')}
-            onBrowseStore={() => setActiveView('store')}
-            onBrowseTraining={() => setActiveView('training')}
+            onBrowseJobs={() => navigateView('jobs')}
+            onBrowseOpportunities={() => navigateView('opportunities')}
+            onBrowseStore={() => navigateView('store')}
+            onBrowseTraining={() => navigateView('training')}
             onRequireAuth={() =>
               openAuthModal({
                 mode: 'signin',
@@ -1618,7 +1920,17 @@ export default function App() {
             externalSources={externalSources}
             isSyncingExternal={isSyncingExternal}
             lastExternalSyncAt={lastExternalSyncAt}
+            aggregatorOverview={aggregatorOverview}
+            fxRates={fxData?.rates || []}
+            opportunities={oppData?.items || []}
+            isSyncingAggregator={isSyncingAggregator}
+            requestedTab={adminRequestedTab}
             onSyncExternalJobs={() => void syncExternalJobs(true, true)}
+            onTriggerAggregatorSync={handleTriggerAggregatorSync}
+            onAddCustomSource={handleAddCustomSource}
+            onToggleSourceActive={handleToggleSourceActive}
+            onReviewFxRate={handleReviewFxRate}
+            onVerifyOpportunity={handleVerifyOpportunity}
             onApproveReceipt={handleApproveReceipt}
             onRejectReceipt={handleRejectReceipt}
             onSetJobStatus={handleSetJobStatus}
@@ -1663,33 +1975,47 @@ export default function App() {
           <div className="flex items-center gap-3">
             <span className="font-display text-sm font-extrabold text-[#10243B]">TATARI</span>
             <span aria-hidden="true">·</span>
-            <span>Addis Ababa, Ethiopia · Job Portal, Training &amp; Digital Store</span>
+            <span>Addis Ababa, Ethiopia · Ethiopian Opportunity, FX, Training &amp; Store</span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-5">
             <button
               type="button"
-              onClick={() => setActiveView('jobs')}
+              onClick={() => navigateView('jobs')}
               className="hover:text-slate-900"
             >
               Find Jobs
             </button>
             <button
               type="button"
-              onClick={() => setActiveView('training')}
+              onClick={() => navigateView('fx')}
+              className="hover:text-slate-900"
+            >
+              Bank FX
+            </button>
+            <button
+              type="button"
+              onClick={() => navigateView('opportunities')}
+              className="hover:text-slate-900"
+            >
+              Opportunities
+            </button>
+            <button
+              type="button"
+              onClick={() => navigateView('training')}
               className="hover:text-slate-900"
             >
               Training Services
             </button>
             <button
               type="button"
-              onClick={() => setActiveView('store')}
+              onClick={() => navigateView('store')}
               className="hover:text-slate-900"
             >
               Digital Store
             </button>
             <button
               type="button"
-              onClick={() => setActiveView('employer')}
+              onClick={() => navigateView('employer')}
               className="hover:text-slate-900"
             >
               Post a Job

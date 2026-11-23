@@ -4,6 +4,8 @@ export const TRANSLATIONS: Record<
   Language,
   {
     navJobs: string;
+    navFx: string;
+    navOpportunities: string;
     navTraining: string;
     navStore: string;
     navActivity: string;
@@ -36,23 +38,25 @@ export const TRANSLATIONS: Record<
   }
 > = {
   en: {
-    navJobs: 'Find Jobs',
+    navJobs: 'Jobs',
+    navFx: 'Bank FX',
+    navOpportunities: 'Opportunities',
     navTraining: 'Training',
     navStore: 'Digital Store',
-    navActivity: 'Saved & Orders',
-    navEmployer: 'Employers / Post Job',
-    navAdmin: 'Admin Console',
-    signIn: 'Sign In / Register',
+    navActivity: 'Saved',
+    navEmployer: 'Employers',
+    navAdmin: 'Admin',
+    signIn: 'Sign In',
     account: 'Account',
     whatPlaceholder: 'Job title, keywords, or company',
     wherePlaceholder: 'City, region, or "Remote"',
     findJobs: 'Find jobs',
     jobsHeroTitle: 'Discover verified careers across Ethiopia and remote teams',
     jobsHeroSubtitle:
-      'Browse TATARI Administrator-verified listings alongside live vacancies aggregated from leading Ethiopian job portals with direct source links.',
+      'Browse TATARI Employer vacancies alongside live openings collected from leading Ethiopian job portals with original source attribution and timestamps.',
     trainingHeroTitle: 'Tailored Corporate & Organizational Training',
     trainingHeroSubtitle:
-      'Custom in-house and virtual capacity building in Power Query, Ethiopian Payroll & Labor Law, IFRS Reporting, and HR Systems—designed around your organization’s workflows.',
+      'Custom in-house and virtual capacity building in Power Query, Ethiopian Payroll & Labor Law, IFRS Reporting, and HR Systems—plus verified external fellowships.',
     applyNow: 'Apply now',
     appliedBadge: 'Applied',
     saveJob: 'Save job',
@@ -71,20 +75,22 @@ export const TRANSLATIONS: Record<
     helpButton: 'Help',
   },
   am: {
-    navJobs: 'ሥራ ይፈልጉ',
-    navTraining: 'ስልጠናዎች',
+    navJobs: 'ሥራዎች',
+    navFx: 'የባንክ ምንዛሬ',
+    navOpportunities: 'ዕድሎች እና ጨረታ',
+    navTraining: 'ስልጠና',
     navStore: 'ዲጂታል መደብር',
-    navActivity: 'የተቀመጡ እና ትዕዛዞች',
-    navEmployer: 'አሠሪዎች / ሥራ ይለጥፉ',
-    navAdmin: 'የአስተዳዳሪ ፓነል',
-    signIn: 'ይግቡ / ይመዝገቡ',
+    navActivity: 'የተቀመጡ',
+    navEmployer: 'አሠሪዎች',
+    navAdmin: 'አስተዳዳሪ',
+    signIn: 'ይግቡ',
     account: 'መለያ',
     whatPlaceholder: 'የሥራ ርዕስ፣ ቁልፍ ቃል ወይም ድርጅት',
     wherePlaceholder: 'ከተማ፣ ክልል ወይም "Remote"',
     findJobs: 'ሥራ ፈልግ',
     jobsHeroTitle: 'በኢትዮጵያ እና በሪሞት የተረጋገጡ የሥራ ዕድሎችን ያግኙ',
     jobsHeroSubtitle:
-      'በታታሪ የተረጋገጡ እና ከታዋቂ የኢትዮጵያ የሥራ ድረ-ገጾች የተሰበሰቡ ክፍት የሥራ ቦታዎችን ከዋናው ምንጭ አድራሻ ጋር ያግኙ።',
+      'በታታሪ የተረጋገጡ እና ከታዋቂ የኢትዮጵያ የሥራ ድረ-ገጾች የተሰበሰቡ ክፍት የሥራ ቦታዎችን ከዋናው ምንጭ አድራሻ እና የማረጋገጫ ቀን ጋር ያግኙ።',
     trainingHeroTitle: 'ለድርጅትዎ የተበጀ የባለሙያ ስልጠና አገልግሎት',
     trainingHeroSubtitle:
       'በPower Query፣ በኢትዮጵያ የደመወዝ እና የአሠሪና ሠራተኛ ሕግ፣ በIFRS እና በሰው ሀብት አስተዳደር ለማንኛውም ድርጅት የሚሰጡ ተግባራዊ ስልጠናዎች።',

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   CheckCircle2,
   Clock,
@@ -25,19 +25,24 @@ import {
   type AdminUserUpdateInput,
 } from '../lib/security';
 import { formatCurrencyEtb, formatRelativeDays } from '../lib/storeLogic';
+import { AdminSourcesHealthPanel } from './AdminSourcesHealthPanel';
 import {
   TRAINING_DELIVERY_MODES,
   type TrainingProgramInput,
 } from '../lib/trainingLogic';
 import type {
   AccountStatus,
+  AggregatedOpportunity,
+  AggregatorOverviewResponse,
   AuditLogEntry,
+  BankFxRateRecord,
   DigitalProduct,
   ExternalJobSourceStatus,
   JobApplication,
   JobListing,
   JobModerationStatus,
   MaterialOrder,
+  OpportunityModuleType,
   PaymentReceipt,
   TrainingCategory,
   TrainingDeliveryMode,
@@ -62,7 +67,33 @@ interface AdminConsoleViewProps {
   externalSources?: ExternalJobSourceStatus[];
   isSyncingExternal?: boolean;
   lastExternalSyncAt?: string | null;
+  aggregatorOverview?: AggregatorOverviewResponse | null;
+  fxRates?: BankFxRateRecord[];
+  opportunities?: AggregatedOpportunity[];
+  isSyncingAggregator?: boolean;
+  requestedTab?: 'payments' | 'jobs' | 'store' | 'training' | 'sources' | 'users';
   onSyncExternalJobs?: () => void;
+  onTriggerAggregatorSync?: (
+    scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'single',
+    sourceId?: string
+  ) => Promise<void>;
+  onAddCustomSource?: (payload: {
+    name: string;
+    url: string;
+    feedUrl: string;
+    module: OpportunityModuleType;
+    method: 'wp_rest_json' | 'rss_xml';
+  }) => Promise<string | null>;
+  onToggleSourceActive?: (sourceId: string, nextActive: boolean) => Promise<void>;
+  onReviewFxRate?: (
+    rateId: string,
+    buyingRate: number | null,
+    sellingRate: number | null
+  ) => Promise<void>;
+  onVerifyOpportunity?: (
+    oppId: string,
+    updates: { title: string; organization: string; deadline: string }
+  ) => Promise<void>;
   onApproveReceipt: (receiptId: string) => void;
   onRejectReceipt: (receiptId: string, reason: string) => void;
   onSetJobStatus: (jobId: string, status: JobModerationStatus) => void;
@@ -113,7 +144,17 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   externalSources = [],
   isSyncingExternal = false,
   lastExternalSyncAt = null,
+  aggregatorOverview = null,
+  fxRates = [],
+  opportunities = [],
+  isSyncingAggregator = false,
+  requestedTab,
   onSyncExternalJobs,
+  onTriggerAggregatorSync,
+  onAddCustomSource,
+  onToggleSourceActive,
+  onReviewFxRate,
+  onVerifyOpportunity,
   onApproveReceipt,
   onRejectReceipt,
   onSetJobStatus,
@@ -136,7 +177,15 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   onExportCsv,
   onOpenAdminSignIn,
 }) => {
-  const [tab, setTab] = useState<'payments' | 'jobs' | 'store' | 'training' | 'users'>('payments');
+  const [tab, setTab] = useState<'payments' | 'jobs' | 'store' | 'training' | 'sources' | 'users'>(
+    requestedTab || 'payments'
+  );
+
+  useEffect(() => {
+    if (requestedTab) {
+      setTab(requestedTab);
+    }
+  }, [requestedTab]);
   const [userSearch, setUserSearch] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState<'all' | UserRole>('all');
   const [userFilter, setUserFilter] = useState<'all' | AccountStatus>('all');
@@ -532,6 +581,20 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
             }`}
           >
             Training Services ({openTrainingCount} open)
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'sources'}
+            onClick={() => setTab('sources')}
+            className={`rounded-md px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              tab === 'sources'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Sources &amp; Health
+            {aggregatorOverview?.anomaliesCount ? ` (${aggregatorOverview.anomaliesCount} alert)` : ''}
           </button>
           <button
             type="button"
@@ -1331,6 +1394,31 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
             </table>
           </div>
         </section>
+      )}
+
+      {/* Tab: Aggregator Sources & Health */}
+      {tab === 'sources' && (
+        <AdminSourcesHealthPanel
+          overview={aggregatorOverview}
+          fxRates={fxRates}
+          opportunities={opportunities}
+          isSyncing={isSyncingAggregator}
+          onTriggerSync={async (scope, sourceId) => {
+            if (onTriggerAggregatorSync) await onTriggerAggregatorSync(scope, sourceId);
+          }}
+          onAddCustomSource={async (payload) =>
+            onAddCustomSource ? await onAddCustomSource(payload) : 'Not configured.'
+          }
+          onToggleSourceActive={async (sourceId, nextActive) => {
+            if (onToggleSourceActive) await onToggleSourceActive(sourceId, nextActive);
+          }}
+          onReviewFxRate={async (rateId, buyingRate, sellingRate) => {
+            if (onReviewFxRate) await onReviewFxRate(rateId, buyingRate, sellingRate);
+          }}
+          onVerifyOpportunity={async (oppId, updates) => {
+            if (onVerifyOpportunity) await onVerifyOpportunity(oppId, updates);
+          }}
+        />
       )}
 
       {/* Admin Create User Modal */}

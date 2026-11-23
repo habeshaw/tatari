@@ -155,11 +155,21 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700 shrink-0" />
                   <div>
-                    <strong className="text-slate-900">3. Manage Profile, Saved Jobs &amp; Stages:</strong>{' '}
+                    <strong className="text-slate-900">3. Explore Bank FX &amp; Opportunities Hub:</strong>{' '}
+                    Compare live Ethiopian commercial bank <strong>Cash vs Transaction</strong>{' '}
+                    rates alongside the NBE indicative mid-rate in <strong>Bank FX</strong>, or
+                    browse verified Tenders, Scholarships, Grants, and Public Notices in{' '}
+                    <strong>Opportunities</strong>.
+                  </div>
+                </li>
+                <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700 shrink-0" />
+                  <div>
+                    <strong className="text-slate-900">4. Manage Profile, Saved Items &amp; Stages:</strong>{' '}
                     Click your account name in the top bar anytime to open{' '}
                     <strong>My Profile</strong>—update your headline and default CV link, rotate your
-                    password, or delete your account, and track stages in{' '}
-                    <strong>Saved &amp; Orders</strong>.
+                    password, or delete your account, and track saved items and stages in{' '}
+                    <strong>Saved</strong>.
                   </div>
                 </li>
               </ol>
@@ -171,6 +181,20 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                   className="rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61]"
                 >
                   Browse Verified Jobs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGoView('fx')}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Compare Bank FX Rates
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGoView('opportunities')}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Tenders &amp; Scholarships
                 </button>
                 <button
                   type="button"
@@ -357,10 +381,13 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700 shrink-0" />
                   <div>
-                    <strong className="text-slate-900">Training &amp; External Feed Governance:</strong>{' '}
-                    Assign trainers, finalize quotes, and manage training curriculum tracks in{' '}
-                    <em>Admin Console → Training Services</em>, or refresh aggregated Ethiopian job
-                    feeds in <em>Job Moderation</em>.
+                    <strong className="text-slate-900">
+                      Training, Sources &amp; Aggregator Health:
+                    </strong>{' '}
+                    Assign trainers and manage curriculum tracks in{' '}
+                    <em>Admin Console → Training Services</em>, or monitor live Ethiopian job, FX,
+                    and tender/scholarship crawlers, resolve flagged rate anomalies, and add custom
+                    RSS/WP feeds in <em>Sources &amp; Health</em>.
                   </div>
                 </li>
                 <li className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3">

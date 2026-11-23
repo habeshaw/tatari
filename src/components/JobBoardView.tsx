@@ -167,11 +167,23 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
                   Sponsored · Featured Vacancy
                 </div>
               )}
+              {job.isDemoSeed && !isExternal && (
+                <div className="mb-1 text-[11px] font-semibold text-amber-700">
+                  Demo Platform Sample Vacancy · Replace or pause in Admin Console
+                </div>
+              )}
               {isExternal && (
-                <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#164081]">
+                <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-[#164081]">
                   <Globe className="h-3.5 w-3.5" />
                   <span>
-                    Collected from {sourceName} · {sourceDomain}
+                    Verified Aggregated Source: {sourceName} · {sourceDomain}
+                    {job.lastVerifiedAt
+                      ? ` · Checked ${new Date(job.lastVerifiedAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}`
+                      : ''}
+                    {job.isExpired ? ' · Expired' : ''}
                   </span>
                 </div>
               )}
@@ -672,9 +684,15 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
                             Sponsored
                           </div>
                         )}
+                        {job.isDemoSeed && !isExternal && (
+                          <div className="mb-0.5 text-[11px] font-medium text-amber-700">
+                            Sample Demo Listing
+                          </div>
+                        )}
                         {isExternal && (
-                          <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-[#164081]">
-                            Source · {job.sourceSite || job.sourceDomain}
+                          <div className="mb-0.5 text-[11px] font-semibold text-[#164081]">
+                            Source: {job.sourceSite || job.sourceDomain}
+                            {job.isExpired ? ' · Expired' : ''}
                           </div>
                         )}
                         <h3 className="font-display text-base font-bold text-slate-900 hover:text-[#164081]">

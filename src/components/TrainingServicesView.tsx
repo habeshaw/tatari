@@ -4,6 +4,7 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  ExternalLink,
   FileText,
   GraduationCap,
   Lock,
@@ -21,6 +22,7 @@ import {
   type CreateTrainingRequestInput,
 } from '../lib/trainingLogic';
 import type {
+  AggregatedOpportunity,
   Language,
   TrainingDeliveryMode,
   TrainingFilterCriteria,
@@ -32,6 +34,7 @@ import type {
 interface TrainingServicesViewProps {
   programs: TrainingProgram[];
   requests: TrainingRequest[];
+  externalCourses?: AggregatedOpportunity[];
   currentUser: UserProfile | null;
   language: Language;
   onToggleLanguage: (lang: Language) => void;
@@ -43,6 +46,7 @@ interface TrainingServicesViewProps {
 export const TrainingServicesView: React.FC<TrainingServicesViewProps> = ({
   programs,
   requests,
+  externalCourses = [],
   currentUser,
   language,
   onToggleLanguage,
@@ -52,6 +56,7 @@ export const TrainingServicesView: React.FC<TrainingServicesViewProps> = ({
 }) => {
   const t = TRANSLATIONS[language];
 
+  const [trainingSectionTab, setTrainingSectionTab] = useState<'academy' | 'external'>('academy');
   const [criteria, setCriteria] = useState<TrainingFilterCriteria>({
     query: '',
     category: 'all',
@@ -345,6 +350,117 @@ export const TrainingServicesView: React.FC<TrainingServicesViewProps> = ({
 
       {/* Master-Detail Training Catalog */}
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {/* Section Mode Tabs: TATARI Tailored Cohorts vs External Verified Bootcamps & Scholarships */}
+        <div
+          role="tablist"
+          aria-label="Training & Courses Sections"
+          className="mb-5 inline-flex flex-wrap gap-1.5 rounded-lg border border-slate-200 bg-slate-100 p-1"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={trainingSectionTab === 'academy'}
+            onClick={() => setTrainingSectionTab('academy')}
+            className={`rounded-md px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              trainingSectionTab === 'academy'
+                ? 'bg-white text-[#164081] shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            TATARI Academy Organizational Cohorts ({visiblePrograms.length})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={trainingSectionTab === 'external'}
+            onClick={() => setTrainingSectionTab('external')}
+            className={`rounded-md px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              trainingSectionTab === 'external'
+                ? 'bg-white text-[#164081] shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            External Courses, Bootcamps &amp; Scholarships ({externalCourses.length})
+          </button>
+        </div>
+
+        {trainingSectionTab === 'external' ? (
+          <section className="space-y-4" data-testid="external-training-list">
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <h2 className="font-display text-lg font-bold text-slate-900">
+                External Verified Scholarships, Fellowships &amp; Training Calls
+              </h2>
+              <p className="mt-1 text-xs text-slate-600">
+                Collected directly from verified public Ethiopian and African educational feeds.
+                Program fees and formal accreditation must always be confirmed on the original
+                provider’s page — TATARI never assumes or fabricates accreditation.
+              </p>
+            </div>
+
+            {externalCourses.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
+                <GraduationCap className="mx-auto h-9 w-9 text-slate-400" />
+                <h3 className="mt-3 font-display text-base font-bold text-slate-900">
+                  No external courses or scholarship announcements loaded yet
+                </h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  Wait a moment for live Ethiopian &amp; African feeds to finish syncing or visit the
+                  Opportunities tab to refresh verified sources.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {externalCourses.map((course) => (
+                  <article
+                    key={course.id}
+                    className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5"
+                  >
+                    <div>
+                      <div className="text-[11px] font-semibold text-[#0F766E]">
+                        {course.sourceName} · {course.eligibilityOrCoverage}
+                      </div>
+                      <h3 className="mt-1 font-display text-base font-bold text-slate-900">
+                        {course.title}
+                      </h3>
+                      <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-600">
+                        {course.summary}
+                      </p>
+                      <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2.5 text-[11px] text-slate-600 tabular-nums">
+                        <div>
+                          <dt className="text-slate-400">Fee / Funding</dt>
+                          <dd className="font-semibold text-slate-800">{course.priceOrFunding}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-400">Accreditation</dt>
+                          <dd className="font-semibold text-slate-800">
+                            Verify on original provider
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <div className="mt-3.5 flex items-center justify-between border-t border-slate-100 pt-3 text-xs">
+                      <span className="font-mono text-[11px] text-slate-500">
+                        {course.publishedAt
+                          ? `Published ${new Date(course.publishedAt).toLocaleDateString()}`
+                          : 'Published date not provided'}
+                      </span>
+                      <a
+                        href={course.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-semibold text-[#164081] hover:underline"
+                      >
+                        <span>Original Provider</span>
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : (
+          <>
         <div className="mb-4 flex items-center justify-between text-xs text-slate-500">
           <span className="tabular-nums font-medium">
             Showing {visiblePrograms.length} tailored organizational{' '}
@@ -534,6 +650,8 @@ export const TrainingServicesView: React.FC<TrainingServicesViewProps> = ({
             </div>
           )}
         </section>
+          </>
+        )}
       </main>
 
       {/* Mobile Detail Drawer */}
