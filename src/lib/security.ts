@@ -4,7 +4,7 @@ import type {
   JobListing,
   UserProfile,
   UserRole,
-} from '../types/domain';
+} from '../types/domain.ts';
 
 export type ProtectedActivity =
   | 'browse_jobs'

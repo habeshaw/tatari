@@ -1,11 +1,11 @@
-import { decodeHtmlEntities, sanitizeHttpUrl, stripHtmlToText } from './externalJobs';
+import { decodeHtmlEntities, sanitizeHttpUrl, stripHtmlToText } from './externalJobs.ts';
 import type {
   BankFxHistoryPoint,
   BankFxRateCategory,
   BankFxRateRecord,
   BankFxSourceStatus,
   NbeIndicativeMidRate,
-} from '../types/domain';
+} from '../types/domain.ts';
 
 export interface EthiopianBankRegistryItem {
   bankId: string;

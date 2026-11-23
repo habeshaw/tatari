@@ -5,7 +5,7 @@ import type {
   JobListing,
   JobType,
   RemoteType,
-} from '../types/domain';
+} from '../types/domain.ts';
 
 export interface ExternalJobSourceConfig {
   id: ExternalJobSourceId;

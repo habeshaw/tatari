@@ -1,4 +1,4 @@
-import { hashUserPassword } from '../lib/security';
+import { hashUserPassword } from '../lib/security.ts';
 import type {
   AuditLogEntry,
   DigitalProduct,
@@ -9,7 +9,7 @@ import type {
   TrainingProgram,
   TrainingRequest,
   UserProfile,
-} from '../types/domain';
+} from '../types/domain.ts';
 
 export const SEED_USERS: UserProfile[] = [
   {

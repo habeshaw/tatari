@@ -4,7 +4,7 @@ import {
   isDeadlineExpired,
   sanitizeHttpUrl,
   stripHtmlToText,
-} from './externalJobs';
+} from './externalJobs.ts';
 import type {
   AggregatedOpportunity,
   AggregationSourceRecord,
@@ -13,7 +13,7 @@ import type {
   JobListing,
   OpportunityModuleType,
   TrainingProgram,
-} from '../types/domain';
+} from '../types/domain.ts';
 
 export interface OpportunitySourceDefinition {
   id: string;
