@@ -2,24 +2,33 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildValidatedFxRecord,
+  computeMarketFxExtremes,
   ETHIOPIAN_BANKS_CATALOG,
   mergeBankRatesWithHistory,
   normalizeCurrencyCode,
+  parseAbayBankHtml,
   parseAmharaBankHtml,
+  parseBerhanBankHtml,
   parseBunnaApiRates,
   parseCoopBankHtml,
   parseDashenBankHtml,
+  parseEnatBankHtml,
+  parseGlobalBankHtml,
   parseNbeApiRates,
   parseNibBankHtml,
   parsePositiveRate,
+  parseSiinqeeBankHtml,
+  parseZamZamBankHtml,
+  parseZemenApiRates,
 } from './fxAggregator';
 
 const SYNCED_AT = '2026-11-23T06:00:00.000Z';
 
-test('normalizeCurrencyCode handles parenthesized, hyphenated, and exact ISO strings', () => {
+test('normalizeCurrencyCode handles parenthesized, hyphenated, YUA alias, and exact ISO strings', () => {
   assert.equal(normalizeCurrencyCode('US Dollar (USD)'), 'USD');
   assert.equal(normalizeCurrencyCode('EUR - Euro'), 'EUR');
   assert.equal(normalizeCurrencyCode('GBP'), 'GBP');
+  assert.equal(normalizeCurrencyCode('YUA'), 'CNY');
   assert.equal(normalizeCurrencyCode('INVALID-CURRENCY'), null);
 });
 
@@ -276,4 +285,145 @@ test('mergeBankRatesWithHistory flags >15% anomalies, avoids duplicate snapshots
   const updatedDashen = anomalyRun.rates.find((r) => r.bankId === 'dashen');
   assert.equal(updatedDashen?.anomalyFlagged, true);
   assert.equal(updatedDashen?.dailyChangeBuy, 40);
+});
+
+test('parseZemenApiRates separates Cash and Transaction rates cleanly', () => {
+  const parsed = parseZemenApiRates(
+    {
+      status: 'success',
+      date: '2026-11-23',
+      rates: {
+        day: [
+          {
+            currency_code: 'USD',
+            buying_rate: '161.1993',
+            selling_rate: '164.4233',
+            cash_buying_rate: '162.8113',
+            cash_selling_rate: '166.0675',
+          },
+        ],
+      },
+    },
+    SYNCED_AT
+  );
+  assert.equal(parsed.length, 2);
+  assert.equal(parsed.find((r) => r.rateCategory === 'cash')?.buyingRate, 162.8113);
+  assert.equal(parsed.find((r) => r.rateCategory === 'transaction')?.buyingRate, 161.1993);
+});
+
+test('parseBerhanBankHtml and parseEnatBankHtml extract rates and map YUA -> CNY', () => {
+  const berhanHtml = `
+    <input type='hidden' id='USD' value={"buying":"162.3735","selling":"165.6210","currency":"USD","currencyText":"1_USD_($)"} />
+    <input type='hidden' id='YUA' value={"buying":"24.3555","selling":"24.8426","currency":"YUA","currencyText":"1_YUA"} />
+  `;
+  const berhan = parseBerhanBankHtml(berhanHtml, SYNCED_AT);
+  assert.equal(berhan.length, 2);
+  assert.equal(berhan.find((r) => r.currencyCode === 'CNY')?.buyingRate, 24.3555);
+
+  const enatHtml = `
+    <div><h4>USD</h4></div><div><p>161.8481</p></div><div><p>165.0851</p></div>
+    <div><h4>EUR</h4></div><div><p>187.5119</p></div><div><p>191.2621</p></div>
+  `;
+  const enat = parseEnatBankHtml(enatHtml, SYNCED_AT);
+  assert.equal(enat.length, 2);
+  assert.equal(enat[0].currencyCode, 'USD');
+  assert.equal(enat[0].sellingRate, 165.0851);
+});
+
+test('parseAbayBankHtml, parseSiinqeeBankHtml, parseZamZamBankHtml, and parseGlobalBankHtml handle tables and skip No Trade rows', () => {
+  const abayHtml = `
+    <table><tr><th colspan="3">CASH RATE</th></tr><tr><td>USD</td><td>164.5118</td><td>167.8020</td></tr></table>
+    <table><tr><th colspan="3">TRANSACTION RATE</th></tr><tr><td>USD</td><td>162.1071</td><td>165.3492</td></tr></table>
+  `;
+  const abay = parseAbayBankHtml(abayHtml, SYNCED_AT);
+  assert.equal(abay.length, 2);
+  assert.equal(abay.find((r) => r.rateCategory === 'cash')?.buyingRate, 164.5118);
+  assert.equal(abay.find((r) => r.rateCategory === 'transaction')?.buyingRate, 162.1071);
+
+  const siinqeeHtml = `<table><tr><th>Currency</th><th>Buying</th><th>Selling</th></tr><tr><td>USD</td><td>161.3585</td><td>164.5857</td></tr></table>`;
+  const siinqee = parseSiinqeeBankHtml(siinqeeHtml, SYNCED_AT);
+  assert.equal(siinqee.length, 1);
+  assert.equal(siinqee[0].buyingRate, 161.3585);
+
+  const zamzamHtml = `
+    <table>
+      <tr><th colspan="5">Exchange Rate - November 21, 2026</th></tr>
+      <tr><th>Currency</th><th colspan="2">Cash</th><th colspan="2">Transaction</th></tr>
+      <tr><th></th><th>Buying</th><th>Selling</th><th>Buying</th><th>Selling</th></tr>
+      <tr><td>USD - Us Dollar</td><td>162.2896</td><td>165.5354</td><td>162.2896</td><td>165.5354</td></tr>
+    </table>
+  `;
+  const zamzam = parseZamZamBankHtml(zamzamHtml, SYNCED_AT);
+  assert.equal(zamzam.length, 2);
+
+  const globalHtml = `
+    <table><tr><th>Currency</th><th>Buying</th><th>Selling</th></tr><tr><td>USD</td><td>161.5581</td><td>164.7893</td></tr></table>
+    <table><tr><th>Currency</th><th>Buying</th><th>Selling</th></tr><tr><td>USD</td><td>No Trade</td><td>No Trade</td></tr></table>
+  `;
+  const global = parseGlobalBankHtml(globalHtml, SYNCED_AT);
+  assert.equal(global.length, 1);
+  assert.equal(global[0].buyingRate, 161.5581);
+});
+
+test('computeMarketFxExtremes computes daily highest buying and lowest selling across Ethiopian banks strictly by category', () => {
+  const nbe = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'nbe')!;
+  const abay = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'abay')!;
+  const dashen = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'dashen')!;
+  const siinqee = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'siinqee')!;
+
+  const rates = [
+    buildValidatedFxRecord({
+      bank: nbe,
+      currencyCode: 'USD',
+      rateCategory: 'nbe_reference',
+      buyingRaw: '169.00',
+      sellingRaw: '150.00',
+      publishedDate: '2026-11-23',
+      collectedAt: SYNCED_AT,
+      sourceUrl: nbe.fxPageUrl,
+      sourceType: 'official_api',
+    })!,
+    buildValidatedFxRecord({
+      bank: abay,
+      currencyCode: 'USD',
+      rateCategory: 'cash',
+      buyingRaw: '164.51',
+      sellingRaw: '167.80',
+      publishedDate: '2026-11-23',
+      collectedAt: SYNCED_AT,
+      sourceUrl: abay.fxPageUrl,
+      sourceType: 'official_html_table',
+    })!,
+    buildValidatedFxRecord({
+      bank: dashen,
+      currencyCode: 'USD',
+      rateCategory: 'cash',
+      buyingRaw: '161.20',
+      sellingRaw: '164.42',
+      publishedDate: '2026-11-23',
+      collectedAt: SYNCED_AT,
+      sourceUrl: dashen.fxPageUrl,
+      sourceType: 'official_html_table',
+    })!,
+    buildValidatedFxRecord({
+      bank: siinqee,
+      currencyCode: 'USD',
+      rateCategory: 'transaction',
+      buyingRaw: '168.00',
+      sellingRaw: '170.00',
+      publishedDate: '2026-11-23',
+      collectedAt: SYNCED_AT,
+      sourceUrl: siinqee.fxPageUrl,
+      sourceType: 'official_html_table',
+    })!,
+  ];
+
+  const cashExtremes = computeMarketFxExtremes(rates, 'cash');
+  assert.equal(cashExtremes.length, 1);
+  assert.equal(cashExtremes[0].banksCount, 2);
+  assert.equal(cashExtremes[0].highestBuyingRate, 164.51);
+  assert.equal(cashExtremes[0].highestBuyingBank, 'Abay');
+  assert.equal(cashExtremes[0].lowestBuyingRate, 161.2);
+  assert.equal(cashExtremes[0].lowestSellingRate, 164.42);
+  assert.equal(cashExtremes[0].lowestSellingBank, 'Dashen');
 });

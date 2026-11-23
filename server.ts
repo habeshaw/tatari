@@ -1,7 +1,15 @@
 import express from 'express';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  createAdminSessionToken,
+  extractBearerToken,
+  verifyAdminSessionToken,
+} from './src/lib/adminAuth.ts';
+import { hashUserPassword } from './src/lib/security.ts';
+import { SEED_USERS } from './src/data/seedData.ts';
 import {
   EXTERNAL_JOB_SOURCES,
   parseEffoySiraPosts,
@@ -13,16 +21,24 @@ import {
 import {
   ETHIOPIAN_BANKS_CATALOG,
   mergeBankRatesWithHistory,
+  parseAbayBankHtml,
   parseAmharaBankHtml,
+  parseBerhanBankHtml,
   parseBunnaApiRates,
   parseCoopBankHtml,
   parseDashenBankHtml,
+  parseEnatBankHtml,
+  parseGlobalBankHtml,
   parseNbeApiRates,
   parseNibBankHtml,
+  parseSiinqeeBankHtml,
+  parseZamZamBankHtml,
+  parseZemenApiRates,
   type BunnaForexApiPayload,
   type EthiopianBankRegistryItem,
   type NbeMidRateApiPayload,
   type NbeSelectedRatesApiPayload,
+  type ZemenExchangeAjaxPayload,
 } from './src/lib/fxAggregator.ts';
 import {
   DEFAULT_OPPORTUNITY_SOURCES,
@@ -55,6 +71,15 @@ const PORT = Number(process.env.PORT || 3000);
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const BACKGROUND_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const STORE_PATH = '/tmp/tatari-aggregator-store.json';
+const SESSION_SIGNING_SECRET =
+  process.env.TATARI_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
+const adminPasswordHashes = new Map<string, string>(
+  SEED_USERS.filter((u) => u.role === 'admin' && u.status === 'approved').map((u) => [
+    u.email.toLowerCase(),
+    u.passwordHash,
+  ])
+);
 
 const BROWSER_HEADERS: Record<string, string> = {
   'user-agent':
@@ -555,6 +580,41 @@ async function fetchSingleBankFx(
       };
     }
 
+    if (bank.bankId === 'zemen') {
+      const res = await fetchWithRetry(bank.feedUrl, {
+        method: 'POST',
+        headers: {
+          ...BROWSER_HEADERS,
+          'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          accept: 'application/json',
+        },
+        body: 'action=get_exchange_rates&date=',
+        timeoutMs: 11000,
+        retries: 1,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const payload = (await res.json()) as ZemenExchangeAjaxPayload;
+      const rates = parseZemenApiRates(payload, syncedAt);
+      if (rates.length === 0) throw new Error('Zemen FX AJAX returned 0 valid currency rates.');
+      return {
+        rates,
+        failed: false,
+        status: {
+          bankId: bank.bankId,
+          bankName: bank.bankName,
+          bankShortName: bank.bankShortName,
+          isCentralBank: false,
+          officialWebsite: bank.officialWebsite,
+          fxPageUrl: bank.fxPageUrl,
+          method: bank.method,
+          status: rates[0]?.verificationStatus === 'Stale' ? 'Stale' : 'Verified',
+          currenciesCollected: rates.length,
+          publishedDate: rates[0]?.publishedDate || null,
+          lastCheckedAt: syncedAt,
+        },
+      };
+    }
+
     const res = await fetchWithRetry(bank.feedUrl, {
       headers: BROWSER_HEADERS,
       timeoutMs: 11000,
@@ -568,6 +628,12 @@ async function fetchSingleBankFx(
     else if (bank.bankId === 'coop') rates = parseCoopBankHtml(html, syncedAt);
     else if (bank.bankId === 'amhara') rates = parseAmharaBankHtml(html, syncedAt);
     else if (bank.bankId === 'nib') rates = parseNibBankHtml(html, syncedAt);
+    else if (bank.bankId === 'berhan') rates = parseBerhanBankHtml(html, syncedAt);
+    else if (bank.bankId === 'enat') rates = parseEnatBankHtml(html, syncedAt);
+    else if (bank.bankId === 'abay') rates = parseAbayBankHtml(html, syncedAt);
+    else if (bank.bankId === 'siinqee') rates = parseSiinqeeBankHtml(html, syncedAt);
+    else if (bank.bankId === 'zamzam') rates = parseZamZamBankHtml(html, syncedAt);
+    else if (bank.bankId === 'global') rates = parseGlobalBankHtml(html, syncedAt);
 
     if (rates.length === 0) {
       throw new Error('Parsed 0 valid FX rows from official HTML page.');
@@ -1013,11 +1079,53 @@ async function startServer() {
     }
   });
 
-  app.get('/api/aggregator/overview', (_req, res) => {
+  const requireAdminBearer: express.RequestHandler = (req, res, next) => {
+    const token = extractBearerToken(req.headers.authorization);
+    const verified = verifyAdminSessionToken(token, SESSION_SIGNING_SECRET);
+    if (!verified) {
+      res.status(401).json({
+        error: 'Administrator authentication required.',
+      });
+      return;
+    }
+    (req as express.Request & { adminEmail?: string }).adminEmail = verified.email;
+    next();
+  };
+
+  app.post('/api/auth/admin-session', (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    const expectedHash = adminPasswordHashes.get(email);
+    if (!expectedHash || hashUserPassword(email, password) !== expectedHash) {
+      res.status(401).json({ error: 'Invalid Administrator credentials.' });
+      return;
+    }
+    const session = createAdminSessionToken(email, SESSION_SIGNING_SECRET);
+    res.json({
+      ok: true,
+      email,
+      token: session.token,
+      expiresAt: session.expiresAt,
+    });
+  });
+
+  app.patch('/api/auth/admin-password', requireAdminBearer, (req, res) => {
+    const adminEmail = (req as express.Request & { adminEmail?: string }).adminEmail || '';
+    const targetEmail = String(req.body?.email || adminEmail).trim().toLowerCase();
+    const newPassword = String(req.body?.newPassword || '');
+    if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      res.status(400).json({ error: 'Password must be at least 8 characters with letter & number.' });
+      return;
+    }
+    adminPasswordHashes.set(targetEmail, hashUserPassword(targetEmail, newPassword));
+    res.json({ ok: true });
+  });
+
+  app.get('/api/aggregator/overview', requireAdminBearer, (_req, res) => {
     res.json(buildOverviewResponse());
   });
 
-  app.post('/api/aggregator/sync', async (req, res) => {
+  app.post('/api/aggregator/sync', requireAdminBearer, async (req, res) => {
     const scope = String(req.body?.scope || 'all');
     const sourceId = typeof req.body?.sourceId === 'string' ? req.body.sourceId : undefined;
     try {
@@ -1065,7 +1173,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/aggregator/sources', async (req, res) => {
+  app.post('/api/aggregator/sources', requireAdminBearer, async (req, res) => {
     const name = String(req.body?.name || '').trim();
     const url = String(req.body?.url || '').trim();
     const feedUrl = String(req.body?.feedUrl || url).trim();
@@ -1128,7 +1236,7 @@ async function startServer() {
     });
   });
 
-  app.patch('/api/aggregator/sources/:id', (req, res) => {
+  app.patch('/api/aggregator/sources/:id', requireAdminBearer, (req, res) => {
     const id = req.params.id;
     const target = store.opportunitySources.find((s) => s.id === id);
     if (!target) {
@@ -1156,7 +1264,7 @@ async function startServer() {
     res.json({ ok: true, overview: buildOverviewResponse() });
   });
 
-  app.patch('/api/aggregator/listings/:id/verify', (req, res) => {
+  app.patch('/api/aggregator/listings/:id/verify', requireAdminBearer, (req, res) => {
     const id = req.params.id;
     const idx = store.opportunities.findIndex((o) => o.id === id);
     if (idx === -1) {
@@ -1193,7 +1301,7 @@ async function startServer() {
     res.json({ ok: true, item: next });
   });
 
-  app.patch('/api/aggregator/fx/:id/review', (req, res) => {
+  app.patch('/api/aggregator/fx/:id/review', requireAdminBearer, (req, res) => {
     const id = req.params.id;
     const idx = store.fxRates.findIndex((r) => r.id === id);
     if (idx === -1) {

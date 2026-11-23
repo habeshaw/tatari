@@ -153,9 +153,8 @@ export const ETHIOPIAN_BANKS_CATALOG: EthiopianBankRegistryItem[] = [
     isCentralBank: false,
     officialWebsite: 'https://www.zemenbank.com',
     fxPageUrl: 'https://www.zemenbank.com/exchange-rates',
-    feedUrl: 'https://www.zemenbank.com/exchange-rates',
-    method: 'js_rendered',
-    unavailableReason: 'Uses interactive calculator widget without a static daily table feed.',
+    feedUrl: 'https://www.zemenbank.com/wp-admin/admin-ajax.php',
+    method: 'official_api',
   },
   {
     bankId: 'berhan',
@@ -165,8 +164,7 @@ export const ETHIOPIAN_BANKS_CATALOG: EthiopianBankRegistryItem[] = [
     officialWebsite: 'https://berhanbanksc.com',
     fxPageUrl: 'https://berhanbanksc.com/exchange-rate/',
     feedUrl: 'https://berhanbanksc.com/exchange-rate/',
-    method: 'unreachable_blocked',
-    unavailableReason: 'Official website timed out during automated connection.',
+    method: 'official_html_table',
   },
   {
     bankId: 'enat',
@@ -176,8 +174,47 @@ export const ETHIOPIAN_BANKS_CATALOG: EthiopianBankRegistryItem[] = [
     officialWebsite: 'https://www.enatbanksc.com',
     fxPageUrl: 'https://www.enatbanksc.com/',
     feedUrl: 'https://www.enatbanksc.com/',
-    method: 'js_rendered',
-    unavailableReason: 'No structured static daily FX table found on official endpoint.',
+    method: 'official_html_table',
+  },
+  {
+    bankId: 'abay',
+    bankName: 'Abay Bank S.C.',
+    bankShortName: 'Abay',
+    isCentralBank: false,
+    officialWebsite: 'https://abaybank.com.et',
+    fxPageUrl: 'https://abaybank.com.et/',
+    feedUrl: 'https://abaybank.com.et/',
+    method: 'official_html_table',
+  },
+  {
+    bankId: 'siinqee',
+    bankName: 'Siinqee Bank S.C.',
+    bankShortName: 'Siinqee',
+    isCentralBank: false,
+    officialWebsite: 'https://siinqeebank.com',
+    fxPageUrl: 'https://siinqeebank.com/',
+    feedUrl: 'https://siinqeebank.com/',
+    method: 'official_html_table',
+  },
+  {
+    bankId: 'zamzam',
+    bankName: 'ZamZam Bank S.C.',
+    bankShortName: 'ZamZam',
+    isCentralBank: false,
+    officialWebsite: 'https://zamzambank.com',
+    fxPageUrl: 'https://zamzambank.com/',
+    feedUrl: 'https://zamzambank.com/',
+    method: 'official_html_table',
+  },
+  {
+    bankId: 'global',
+    bankName: 'Global Bank Ethiopia S.C.',
+    bankShortName: 'Global',
+    isCentralBank: false,
+    officialWebsite: 'https://www.globalbankethiopia.com',
+    fxPageUrl: 'https://www.globalbankethiopia.com/',
+    feedUrl: 'https://www.globalbankethiopia.com/',
+    method: 'official_html_table',
   },
   {
     bankId: 'addis',
@@ -191,17 +228,6 @@ export const ETHIOPIAN_BANKS_CATALOG: EthiopianBankRegistryItem[] = [
     unavailableReason: 'No accessible automated FX feed verified.',
   },
   {
-    bankId: 'siinqee',
-    bankName: 'Siinqee Bank S.C.',
-    bankShortName: 'Siinqee',
-    isCentralBank: false,
-    officialWebsite: 'https://www.siinqeebank.com',
-    fxPageUrl: 'https://www.siinqeebank.com/',
-    feedUrl: 'https://www.siinqeebank.com/',
-    method: 'unreachable_blocked',
-    unavailableReason: 'No accessible automated FX feed verified.',
-  },
-  {
     bankId: 'gadaa',
     bankName: 'Gadaa Bank S.C.',
     bankShortName: 'Gadaa',
@@ -209,17 +235,6 @@ export const ETHIOPIAN_BANKS_CATALOG: EthiopianBankRegistryItem[] = [
     officialWebsite: 'https://www.gadaabank.com.et',
     fxPageUrl: 'https://www.gadaabank.com.et/',
     feedUrl: 'https://www.gadaabank.com.et/',
-    method: 'unreachable_blocked',
-    unavailableReason: 'No accessible automated FX feed verified.',
-  },
-  {
-    bankId: 'zamzam',
-    bankName: 'ZamZam Bank S.C.',
-    bankShortName: 'ZamZam',
-    isCentralBank: false,
-    officialWebsite: 'https://www.zamzambank.com',
-    fxPageUrl: 'https://www.zamzambank.com/',
-    feedUrl: 'https://www.zamzambank.com/',
     method: 'unreachable_blocked',
     unavailableReason: 'No accessible automated FX feed verified.',
   },
@@ -260,15 +275,18 @@ const CURRENCY_NAME_MAP: Record<string, string> = {
 export function normalizeCurrencyCode(raw: string): string | null {
   const clean = decodeHtmlEntities(String(raw || '')).trim();
   if (!clean) return null;
+  const mapAlias = (code: string) => (code === 'YUA' ? 'CNY' : code);
   const paren = clean.match(/\(([A-Za-z]{3})\)/);
-  if (paren) return paren[1].toUpperCase();
+  if (paren) return mapAlias(paren[1].toUpperCase());
   const prefixDash = clean.match(/^([A-Za-z]{3})\s*[-–]/);
-  if (prefixDash) return prefixDash[1].toUpperCase();
+  if (prefixDash) return mapAlias(prefixDash[1].toUpperCase());
   const exact = clean.match(/^([A-Za-z]{3})$/);
-  if (exact) return exact[1].toUpperCase();
+  if (exact) return mapAlias(exact[1].toUpperCase());
   const upper = clean.toUpperCase();
-  const token = upper.match(/\b(USD|EUR|GBP|AED|SAR|CAD|CHF|AUD|JPY|CNY|SEK|NOK|DKK|KWD|KES|ZAR|INR|DJF)\b/);
-  if (token) return token[1];
+  const token = upper.match(
+    /\b(USD|EUR|GBP|AED|SAR|CAD|CHF|AUD|JPY|CNY|YUA|SEK|NOK|DKK|KWD|KES|ZAR|INR|DJF)\b/
+  );
+  if (token) return mapAlias(token[1]);
   if (upper.includes('US DOLLAR')) return 'USD';
   if (upper.includes('EURO')) return 'EUR';
   if (upper.includes('POUND')) return 'GBP';
@@ -736,6 +754,424 @@ export function parseNibBankHtml(
   }
 
   return results;
+}
+
+export interface ZemenExchangeAjaxPayload {
+  status?: string;
+  date?: string;
+  rates?: {
+    day?: Array<{
+      currency_code?: string;
+      buying_rate?: string | number | null;
+      selling_rate?: string | number | null;
+      cash_buying_rate?: string | number | null;
+      cash_selling_rate?: string | number | null;
+      post_date?: string | null;
+    }>;
+  };
+}
+
+export function parseZemenApiRates(
+  payload: ZemenExchangeAjaxPayload | null,
+  collectedAt: string = new Date().toISOString()
+): BankFxRateRecord[] {
+  const bank = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'zemen')!;
+  const dayRows = payload?.rates?.day;
+  if (!Array.isArray(dayRows)) return [];
+
+  const results: BankFxRateRecord[] = [];
+  for (const row of dayRows) {
+    const code = row.currency_code || '';
+    const pubDate = payload?.date || (row.post_date ? row.post_date.slice(0, 10) : null);
+
+    const cash = buildValidatedFxRecord({
+      bank,
+      currencyCode: code,
+      rateCategory: 'cash',
+      buyingRaw: row.cash_buying_rate,
+      sellingRaw: row.cash_selling_rate,
+      publishedDate: pubDate,
+      collectedAt,
+      sourceUrl: bank.fxPageUrl,
+      sourceType: 'official_api',
+    });
+    if (cash) results.push(cash);
+
+    const tx = buildValidatedFxRecord({
+      bank,
+      currencyCode: code,
+      rateCategory: 'transaction',
+      buyingRaw: row.buying_rate,
+      sellingRaw: row.selling_rate,
+      publishedDate: pubDate,
+      collectedAt,
+      sourceUrl: bank.fxPageUrl,
+      sourceType: 'official_api',
+    });
+    if (tx) results.push(tx);
+  }
+  return results;
+}
+
+export function parseBerhanBankHtml(
+  html: string,
+  collectedAt: string = new Date().toISOString()
+): BankFxRateRecord[] {
+  const bank = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'berhan')!;
+  const dateMatch = html.match(
+    /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
+  );
+  const pubDate = dateMatch ? dateMatch[0] : collectedAt.slice(0, 10);
+  const results: BankFxRateRecord[] = [];
+
+  for (const match of html.matchAll(/<input[^>]+value=(\{[^>]+\})[^>]*>/gi)) {
+    try {
+      const parsed = JSON.parse(match[1]) as {
+        buying?: string | number;
+        selling?: string | number;
+        currency?: string;
+      };
+      if (!parsed.currency) continue;
+      const rec = buildValidatedFxRecord({
+        bank,
+        currencyCode: parsed.currency,
+        rateCategory: 'cash',
+        buyingRaw: parsed.buying,
+        sellingRaw: parsed.selling,
+        publishedDate: pubDate,
+        collectedAt,
+        sourceUrl: bank.fxPageUrl,
+        sourceType: 'official_html_table',
+      });
+      if (rec) results.push(rec);
+    } catch {
+      // Skip malformed non-FX input blocks
+    }
+  }
+  return results;
+}
+
+export function parseEnatBankHtml(
+  html: string,
+  collectedAt: string = new Date().toISOString()
+): BankFxRateRecord[] {
+  const bank = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'enat')!;
+  const dateMatch = html.match(
+    /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
+  );
+  const pubDate = dateMatch ? dateMatch[0] : collectedAt.slice(0, 10);
+  const results: BankFxRateRecord[] = [];
+  const seen = new Set<string>();
+
+  const cardRegex =
+    /<h4[^>]*>\s*([A-Z]{3})\s*<\/h4>[\s\S]{0,450}?<p[^>]*>\s*([\d.]+)\s*<\/p>[\s\S]{0,250}?<p[^>]*>\s*([\d.]+)\s*<\/p>/gi;
+  for (const match of html.matchAll(cardRegex)) {
+    const code = match[1].toUpperCase();
+    if (seen.has(code)) continue;
+    const rec = buildValidatedFxRecord({
+      bank,
+      currencyCode: code,
+      rateCategory: 'cash',
+      buyingRaw: match[2],
+      sellingRaw: match[3],
+      publishedDate: pubDate,
+      collectedAt,
+      sourceUrl: bank.fxPageUrl,
+      sourceType: 'official_html_table',
+    });
+    if (rec) {
+      seen.add(code);
+      results.push(rec);
+    }
+  }
+  return results;
+}
+
+export function parseAbayBankHtml(
+  html: string,
+  collectedAt: string = new Date().toISOString()
+): BankFxRateRecord[] {
+  const bank = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'abay')!;
+  const tables = extractHtmlTables(html);
+  if (tables.length === 0) return [];
+
+  const dateMatch = html.match(
+    /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
+  );
+  const pubDate = dateMatch ? dateMatch[0] : collectedAt.slice(0, 10);
+  const results: BankFxRateRecord[] = [];
+
+  for (const rows of tables) {
+    if (rows.length < 2) continue;
+    const heading = rows[0].join(' ').toLowerCase();
+    let category: BankFxRateCategory | null = null;
+    if (heading.includes('cash rate')) category = 'cash';
+    else if (heading.includes('transaction rate')) category = 'transaction';
+    else if (heading.includes('weighted average')) category = 'weighted_average';
+    if (!category) continue;
+
+    for (const row of rows.slice(1)) {
+      if (row.length < 2) continue;
+      const code = normalizeCurrencyCode(row[0]);
+      if (!code) continue;
+      const rec = buildValidatedFxRecord({
+        bank,
+        currencyCode: code,
+        rateCategory: category,
+        buyingRaw: row[1],
+        sellingRaw: row[2] ?? null,
+        publishedDate: pubDate,
+        collectedAt,
+        sourceUrl: bank.fxPageUrl,
+        sourceType: 'official_html_table',
+      });
+      if (rec) results.push(rec);
+    }
+  }
+  return results;
+}
+
+export function parseSiinqeeBankHtml(
+  html: string,
+  collectedAt: string = new Date().toISOString()
+): BankFxRateRecord[] {
+  const bank = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'siinqee')!;
+  const tables = extractHtmlTables(html);
+  if (tables.length === 0) return [];
+
+  const dateMatch = html.match(
+    /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
+  );
+  const pubDate = dateMatch ? dateMatch[0] : collectedAt.slice(0, 10);
+  const results: BankFxRateRecord[] = [];
+
+  for (const rows of tables) {
+    const header = rows[0]?.join(' ').toLowerCase() || '';
+    if (!header.includes('buying') || !header.includes('selling')) continue;
+    for (const row of rows.slice(1)) {
+      if (row.length < 3) continue;
+      const rec = buildValidatedFxRecord({
+        bank,
+        currencyCode: row[0],
+        rateCategory: 'cash',
+        buyingRaw: row[1],
+        sellingRaw: row[2],
+        publishedDate: pubDate,
+        collectedAt,
+        sourceUrl: bank.fxPageUrl,
+        sourceType: 'official_html_table',
+      });
+      if (rec) results.push(rec);
+    }
+  }
+  return results;
+}
+
+export function parseZamZamBankHtml(
+  html: string,
+  collectedAt: string = new Date().toISOString()
+): BankFxRateRecord[] {
+  const bank = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'zamzam')!;
+  const tables = extractHtmlTables(html);
+  if (tables.length === 0) return [];
+
+  const results: BankFxRateRecord[] = [];
+  for (const rows of tables) {
+    if (rows.length < 2) continue;
+    const flatHeader = rows.slice(0, 3).map((r) => r.join(' ')).join(' ');
+    const lowerHeader = flatHeader.toLowerCase();
+    const dateMatch = flatHeader.match(
+      /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
+    );
+    const pubDate = dateMatch ? dateMatch[0] : collectedAt.slice(0, 10);
+
+    if (lowerHeader.includes('weighted average')) {
+      for (const row of rows.slice(1)) {
+        if (row.length < 3) continue;
+        const rec = buildValidatedFxRecord({
+          bank,
+          currencyCode: row[0],
+          currencyName: row[0],
+          rateCategory: 'weighted_average',
+          buyingRaw: row[1],
+          sellingRaw: row[2],
+          publishedDate: pubDate,
+          collectedAt,
+          sourceUrl: bank.fxPageUrl,
+          sourceType: 'official_html_table',
+        });
+        if (rec) results.push(rec);
+      }
+      continue;
+    }
+
+    if (lowerHeader.includes('cash') && lowerHeader.includes('transaction')) {
+      for (const row of rows) {
+        if (row.length < 5) continue;
+        const code = normalizeCurrencyCode(row[0]);
+        if (!code) continue;
+
+        const cash = buildValidatedFxRecord({
+          bank,
+          currencyCode: row[0],
+          currencyName: row[0],
+          rateCategory: 'cash',
+          buyingRaw: row[1],
+          sellingRaw: row[2],
+          publishedDate: pubDate,
+          collectedAt,
+          sourceUrl: bank.fxPageUrl,
+          sourceType: 'official_html_table',
+        });
+        if (cash) results.push(cash);
+
+        const tx = buildValidatedFxRecord({
+          bank,
+          currencyCode: row[0],
+          currencyName: row[0],
+          rateCategory: 'transaction',
+          buyingRaw: row[3],
+          sellingRaw: row[4],
+          publishedDate: pubDate,
+          collectedAt,
+          sourceUrl: bank.fxPageUrl,
+          sourceType: 'official_html_table',
+        });
+        if (tx) results.push(tx);
+      }
+    }
+  }
+  return results;
+}
+
+export function parseGlobalBankHtml(
+  html: string,
+  collectedAt: string = new Date().toISOString()
+): BankFxRateRecord[] {
+  const bank = ETHIOPIAN_BANKS_CATALOG.find((b) => b.bankId === 'global')!;
+  const tables = extractHtmlTables(html);
+  if (tables.length === 0) return [];
+
+  const dateMatch = html.match(
+    /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
+  );
+  const pubDate = dateMatch ? dateMatch[0] : collectedAt.slice(0, 10);
+  const results: BankFxRateRecord[] = [];
+  const seen = new Set<string>();
+
+  for (const rows of tables) {
+    const header = rows[0]?.join(' ').toLowerCase() || '';
+    if (!header.includes('buying') || !header.includes('selling')) continue;
+    for (const row of rows.slice(1)) {
+      if (row.length < 3) continue;
+      const code = normalizeCurrencyCode(row[0]);
+      if (!code || seen.has(code)) continue;
+      const rec = buildValidatedFxRecord({
+        bank,
+        currencyCode: code,
+        rateCategory: 'cash',
+        buyingRaw: row[1],
+        sellingRaw: row[2],
+        publishedDate: pubDate,
+        collectedAt,
+        sourceUrl: bank.fxPageUrl,
+        sourceType: 'official_html_table',
+      });
+      if (rec) {
+        seen.add(code);
+        results.push(rec);
+      }
+    }
+  }
+  return results;
+}
+
+export interface CurrencyMarketExtremes {
+  currencyCode: string;
+  currencyName: string;
+  banksCount: number;
+  highestBuyingRate: number | null;
+  highestBuyingBank: string | null;
+  lowestBuyingRate: number | null;
+  lowestBuyingBank: string | null;
+  highestSellingRate: number | null;
+  highestSellingBank: string | null;
+  lowestSellingRate: number | null;
+  lowestSellingBank: string | null;
+  avgSpreadPct: number | null;
+}
+
+export function computeMarketFxExtremes(
+  rates: BankFxRateRecord[],
+  category: 'cash' | 'transaction'
+): CurrencyMarketExtremes[] {
+  const byCurrency = new Map<string, BankFxRateRecord[]>();
+  for (const r of rates) {
+    if (r.isCentralBank || r.rateCategory !== category) continue;
+    const list = byCurrency.get(r.currencyCode) || [];
+    list.push(r);
+    byCurrency.set(r.currencyCode, list);
+  }
+
+  const preferredOrder = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'CAD', 'CHF', 'AUD', 'CNY', 'JPY'];
+  const summary: CurrencyMarketExtremes[] = [];
+
+  for (const [code, rows] of byCurrency.entries()) {
+    const validBuy = rows.filter((r) => r.buyingRate !== null);
+    const validSell = rows.filter((r) => r.sellingRate !== null);
+    const validSpread = rows.filter((r) => r.spreadPct !== null);
+
+    let hiBuy: BankFxRateRecord | null = null;
+    let loBuy: BankFxRateRecord | null = null;
+    for (const r of validBuy) {
+      if (!hiBuy || (r.buyingRate ?? 0) > (hiBuy.buyingRate ?? 0)) hiBuy = r;
+      if (!loBuy || (r.buyingRate ?? Number.MAX_SAFE_INTEGER) < (loBuy.buyingRate ?? Number.MAX_SAFE_INTEGER)) {
+        loBuy = r;
+      }
+    }
+
+    let hiSell: BankFxRateRecord | null = null;
+    let loSell: BankFxRateRecord | null = null;
+    for (const r of validSell) {
+      if (!hiSell || (r.sellingRate ?? 0) > (hiSell.sellingRate ?? 0)) hiSell = r;
+      if (!loSell || (r.sellingRate ?? Number.MAX_SAFE_INTEGER) < (loSell.sellingRate ?? Number.MAX_SAFE_INTEGER)) {
+        loSell = r;
+      }
+    }
+
+    const avgSpreadPct =
+      validSpread.length > 0
+        ? Number(
+            (
+              validSpread.reduce((acc, r) => acc + (r.spreadPct ?? 0), 0) / validSpread.length
+            ).toFixed(2)
+          )
+        : null;
+
+    summary.push({
+      currencyCode: code,
+      currencyName: CURRENCY_NAME_MAP[code] || rows[0]?.currencyName || code,
+      banksCount: rows.length,
+      highestBuyingRate: hiBuy?.buyingRate ?? null,
+      highestBuyingBank: hiBuy?.bankShortName ?? null,
+      lowestBuyingRate: loBuy?.buyingRate ?? null,
+      lowestBuyingBank: loBuy?.bankShortName ?? null,
+      highestSellingRate: hiSell?.sellingRate ?? null,
+      highestSellingBank: hiSell?.bankShortName ?? null,
+      lowestSellingRate: loSell?.sellingRate ?? null,
+      lowestSellingBank: loSell?.bankShortName ?? null,
+      avgSpreadPct,
+    });
+  }
+
+  return summary.sort((a, b) => {
+    const ia = preferredOrder.indexOf(a.currencyCode);
+    const ib = preferredOrder.indexOf(b.currencyCode);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return b.banksCount - a.banksCount || a.currencyCode.localeCompare(b.currencyCode);
+  });
 }
 
 export function mergeBankRatesWithHistory(params: {

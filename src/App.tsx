@@ -140,6 +140,7 @@ export default function App() {
   const [aggregatorOverview, setAggregatorOverview] = useState<AggregatorOverviewResponse | null>(
     null
   );
+  const [adminBearerToken, setAdminBearerToken] = useState<string | null>(null);
   const [isSyncingAggregator, setIsSyncingAggregator] = useState(false);
   const [adminRequestedTab, setAdminRequestedTab] = useState<
     'payments' | 'jobs' | 'store' | 'training' | 'sources' | 'users' | undefined
@@ -226,9 +227,13 @@ export default function App() {
     }
   };
 
-  const refreshAggregatorOverview = async () => {
+  const refreshAggregatorOverview = async (tokenOverride?: string | null) => {
+    const token = tokenOverride ?? adminBearerToken;
+    if (!token) return;
     try {
-      const response = await fetch('/api/aggregator/overview');
+      const response = await fetch('/api/aggregator/overview', {
+        headers: { authorization: `Bearer ${token}` },
+      });
       if (!response.ok) return;
       const data = (await response.json()) as AggregatorOverviewResponse;
       setAggregatorOverview(data);
@@ -307,7 +312,6 @@ export default function App() {
     void syncExternalJobs(false, false);
     void fetchFxRates(false, false);
     void fetchOpportunities(false, false);
-    void refreshAggregatorOverview();
     return () => {
       active = false;
     };
@@ -320,6 +324,14 @@ export default function App() {
         ) || null
       : null;
 
+  const isAdmin = currentUser?.role === 'admin' && currentUser?.status === 'approved';
+
+  useEffect(() => {
+    if (activeView === 'admin' && !isAdmin) {
+      setActiveView('jobs');
+    }
+  }, [activeView, isAdmin]);
+
   const currentSavedJobIds = currentUser
     ? state.savedJobIdsByUser[currentUser.email.toLowerCase()] || []
     : [];
@@ -328,10 +340,9 @@ export default function App() {
     ? state.savedOpportunityIdsByUser[currentUser.email.toLowerCase()] || []
     : [];
 
-  const pendingApprovalCount =
-    currentUser?.role === 'admin'
-      ? state.receipts.filter((r) => r.status === 'pending_verification').length
-      : 0;
+  const pendingApprovalCount = isAdmin
+    ? state.receipts.filter((r) => r.status === 'pending_verification').length
+    : 0;
 
   const lockoutSecondsRemaining = Math.max(0, Math.ceil((lockoutUntilMs - nowMs) / 1000));
 
@@ -1264,6 +1275,16 @@ export default function App() {
       if (updatedUser) {
         void pushUserProfileAndAuditToSupabase(updatedUser, logEntry);
       }
+      if (currentUser.role === 'admin' && adminBearerToken) {
+        void fetch('/api/auth/admin-password', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${adminBearerToken}`,
+          },
+          body: JSON.stringify({ email: currentUser.email, newPassword }),
+        });
+      }
       setState((prev) => ({
         ...prev,
         users: nextUsers,
@@ -1326,6 +1347,30 @@ export default function App() {
       logs: [loginLog, ...prev.logs],
     }));
 
+    if (signedInUser.role === 'admin' && signedInUser.status === 'approved') {
+      void (async () => {
+        try {
+          const authRes = await fetch('/api/auth/admin-session', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ email: signedInUser.email, password }),
+          });
+          if (authRes.ok) {
+            const authData = (await authRes.json()) as { token?: string };
+            if (authData.token) {
+              setAdminBearerToken(authData.token);
+              void refreshAggregatorOverview(authData.token);
+            }
+          }
+        } catch {
+          // Non-blocking fallback
+        }
+      })();
+    } else {
+      setAdminBearerToken(null);
+      setAggregatorOverview(null);
+    }
+
     if (pendingProductAfterAuth) {
       setCheckoutProduct(pendingProductAfterAuth);
       setPendingProductAfterAuth(null);
@@ -1337,6 +1382,8 @@ export default function App() {
   const handleSignOut = () => {
     const actor = currentUser?.email || 'guest';
     setPendingProductAfterAuth(null);
+    setAdminBearerToken(null);
+    setAggregatorOverview(null);
     setState((prev) => ({
       ...prev,
       currentUserEmail: '',
@@ -1608,11 +1655,18 @@ export default function App() {
     scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'single',
     sourceId?: string
   ) => {
+    if (!isAdmin || !adminBearerToken) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
     setIsSyncingAggregator(true);
     try {
       const res = await fetch('/api/aggregator/sync', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${adminBearerToken}`,
+        },
         body: JSON.stringify({ scope, sourceId }),
       });
       if (!res.ok) {
@@ -1642,10 +1696,16 @@ export default function App() {
     module: OpportunityModuleType;
     method: 'wp_rest_json' | 'rss_xml';
   }): Promise<string | null> => {
+    if (!isAdmin || !adminBearerToken) {
+      return 'Administrator authentication required.';
+    }
     try {
       const res = await fetch('/api/aggregator/sources', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${adminBearerToken}`,
+        },
         body: JSON.stringify(payload),
       });
       const data = (await res.json()) as {
@@ -1669,10 +1729,17 @@ export default function App() {
   };
 
   const handleToggleSourceActive = async (sourceId: string, nextActive: boolean) => {
+    if (!isAdmin || !adminBearerToken) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
     try {
       const res = await fetch(`/api/aggregator/sources/${encodeURIComponent(sourceId)}`, {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${adminBearerToken}`,
+        },
         body: JSON.stringify({ active: nextActive }),
       });
       if (!res.ok) return;
@@ -1690,10 +1757,17 @@ export default function App() {
     buyingRate: number | null,
     sellingRate: number | null
   ) => {
+    if (!isAdmin || !adminBearerToken) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
     try {
       const res = await fetch(`/api/aggregator/fx/${encodeURIComponent(rateId)}/review`, {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${adminBearerToken}`,
+        },
         body: JSON.stringify({ buyingRate, sellingRate }),
       });
       if (!res.ok) return;
@@ -1719,10 +1793,17 @@ export default function App() {
     oppId: string,
     updates: { title: string; organization: string; deadline: string }
   ) => {
+    if (!isAdmin || !adminBearerToken) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
     try {
       const res = await fetch(`/api/aggregator/listings/${encodeURIComponent(oppId)}/verify`, {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${adminBearerToken}`,
+        },
         body: JSON.stringify(updates),
       });
       if (!res.ok) return;
@@ -1745,6 +1826,10 @@ export default function App() {
   };
 
   const navigateView = (view: AppView) => {
+    if (view === 'admin' && !isAdmin) {
+      showToast('Administrator console is restricted to authorized administrators.', true);
+      return;
+    }
     if (view !== 'admin') {
       setAdminRequestedTab(undefined);
     }
@@ -1755,6 +1840,7 @@ export default function App() {
   };
 
   const openAdminSourcesPanel = () => {
+    if (!isAdmin) return;
     setAdminRequestedTab('sources');
     navigateView('admin');
   };
@@ -1798,6 +1884,7 @@ export default function App() {
             nbeIndicativeMid={fxData?.nbeIndicativeMid || null}
             syncedAt={fxData?.syncedAt || null}
             isSyncing={isSyncingFx}
+            isAdmin={isAdmin}
             onRefresh={() => void fetchFxRates(true, true)}
             onOpenAdminSources={openAdminSourcesPanel}
           />
@@ -1814,6 +1901,7 @@ export default function App() {
             savedOpportunityIds={currentSavedOpportunityIds}
             syncedAt={oppData?.syncedAt || null}
             isSyncing={isSyncingOpp}
+            isAdmin={isAdmin}
             onRefresh={() => void fetchOpportunities(true, true)}
             onToggleSaveOpportunity={handleToggleSaveOpportunity}
             onNavigateView={navigateView}
@@ -1905,7 +1993,7 @@ export default function App() {
           />
         )}
 
-        {activeView === 'admin' && (
+        {activeView === 'admin' && isAdmin && (
           <AdminConsoleView
             currentUser={currentUser}
             receipts={state.receipts}
@@ -2027,13 +2115,15 @@ export default function App() {
             >
               Help Center
             </button>
-            <a
-              href="/TATARI_Implementation_and_Administration_Guide.docx"
-              download="TATARI_Implementation_and_Administration_Guide.docx"
-              className="hover:text-slate-900 hover:underline"
-            >
-              Admin Guide (.docx)
-            </a>
+            {isAdmin && (
+              <a
+                href="/TATARI_Implementation_and_Administration_Guide.docx"
+                download="TATARI_Implementation_and_Administration_Guide.docx"
+                className="hover:text-slate-900 hover:underline"
+              >
+                Admin Guide (.docx)
+              </a>
+            )}
             <span>© {new Date().getFullYear()} TATARI Consulting PLC</span>
           </div>
         </div>
@@ -2101,7 +2191,7 @@ export default function App() {
           currentUser={currentUser}
           language={state.language}
           onClose={() => setHelpModalOpen(false)}
-          onNavigate={setActiveView}
+          onNavigate={navigateView}
           onOpenAuth={(mode, role) => openAuthModal({ mode, role })}
         />
       )}

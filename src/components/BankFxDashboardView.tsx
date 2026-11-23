@@ -11,6 +11,7 @@ import {
   Search,
   SlidersHorizontal,
 } from 'lucide-react';
+import { computeMarketFxExtremes } from '../lib/fxAggregator';
 import type {
   BankFxHistoryPoint,
   BankFxRateCategory,
@@ -26,6 +27,7 @@ interface BankFxDashboardViewProps {
   nbeIndicativeMid: NbeIndicativeMidRate | null;
   syncedAt: string | null;
   isSyncing: boolean;
+  isAdmin?: boolean;
   onRefresh: () => void;
   onOpenAdminSources: () => void;
 }
@@ -39,6 +41,7 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
   nbeIndicativeMid,
   syncedAt,
   isSyncing,
+  isAdmin = false,
   onRefresh,
   onOpenAdminSources,
 }) => {
@@ -121,6 +124,11 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
         : best
     );
   }, [filteredCommercialRows]);
+
+  const marketExtremes = useMemo(
+    () => computeMarketFxExtremes(commercialRates, rateCategory),
+    [commercialRates, rateCategory]
+  );
 
   const banksWithRates = useMemo(() => {
     const map = new Map<string, string>();
@@ -298,11 +306,22 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={onOpenAdminSources}
+                onClick={
+                  isAdmin
+                    ? onOpenAdminSources
+                    : () =>
+                        document
+                          .getElementById('fx-coverage-matrix')
+                          ?.scrollIntoView({ behavior: 'smooth' })
+                }
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
-                <span>Coverage ({verifiedCommercialBanksCount} Live / {unavailableBanksCount} Unavailable)</span>
+                <span>
+                  {isAdmin
+                    ? `Manage FX Sources (${verifiedCommercialBanksCount} Live / ${unavailableBanksCount} Unavailable)`
+                    : `Bank Coverage (${verifiedCommercialBanksCount} Live / ${unavailableBanksCount} Unavailable)`}
+                </span>
               </button>
             </div>
           </div>
@@ -515,6 +534,104 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
           </div>
         </section>
 
+        {/* All-Currency Daily Market Highs & Lows Summary Across Ethiopian Banks */}
+        {marketExtremes.length > 0 && (
+          <section
+            className="overflow-hidden rounded-xl border border-slate-200 bg-white"
+            data-testid="fx-market-extremes"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-5 py-4">
+              <div>
+                <h2 className="font-display text-base font-bold text-slate-900">
+                  Daily Market Highs &amp; Lows Across Ethiopian Banks (
+                  {rateCategory === 'cash' ? 'Cash Rates' : 'Transaction / Transfer'})
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Best daily buying and lowest selling rates computed exclusively from verified{' '}
+                  {rateCategory === 'cash' ? 'Cash' : 'Transaction'} quotes across{' '}
+                  {verifiedCommercialBanksCount} live Ethiopian banks. Click any currency row to
+                  inspect full bank-by-bank quotes below.
+                </p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
+                  <tr>
+                    <th className="px-5 py-3">Currency</th>
+                    <th className="px-4 py-3 text-right">Highest Buying (ETB)</th>
+                    <th className="px-4 py-3 text-right">Lowest Buying (ETB)</th>
+                    <th className="px-4 py-3 text-right">Lowest Selling (ETB)</th>
+                    <th className="px-4 py-3 text-right">Highest Selling (ETB)</th>
+                    <th className="px-5 py-3 text-right">Avg Spread</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {marketExtremes.slice(0, 10).map((item) => {
+                    const isActiveCur = item.currencyCode === activeCurrency;
+                    return (
+                      <tr
+                        key={item.currencyCode}
+                        onClick={() => setSelectedCurrency(item.currencyCode)}
+                        className={`cursor-pointer transition-colors ${
+                          isActiveCur ? 'bg-[#F0F5FF]' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <td className="px-5 py-3">
+                          <div className="font-display font-bold text-slate-900">
+                            {item.currencyCode}{' '}
+                            <span className="font-sans font-normal text-slate-500">
+                              · {item.currencyName}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 tabular-nums">
+                            {item.banksCount} {item.banksCount === 1 ? 'bank' : 'banks'} quoting
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono tabular-nums">
+                          <div className="font-bold text-[#0F766E]">
+                            {formatRate(item.highestBuyingRate)}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {item.highestBuyingBank || '—'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono tabular-nums">
+                          <div className="font-semibold text-slate-800">
+                            {formatRate(item.lowestBuyingRate)}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {item.lowestBuyingBank || '—'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono tabular-nums">
+                          <div className="font-bold text-[#164081]">
+                            {formatRate(item.lowestSellingRate)}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {item.lowestSellingBank || '—'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono tabular-nums">
+                          <div className="font-semibold text-slate-800">
+                            {formatRate(item.highestSellingRate)}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {item.highestSellingBank || '—'}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 text-right font-mono text-slate-700 tabular-nums">
+                          {item.avgSpreadPct !== null ? `${item.avgSpreadPct.toFixed(2)}%` : 'N/A'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         {/* Commercial Bank Comparison Table */}
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-5 py-4">
@@ -557,7 +674,16 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredCommercialRows.map((row) => (
+                  {filteredCommercialRows.map((row) => {
+                    const isBestBuy =
+                      bestBuying !== null &&
+                      row.buyingRate !== null &&
+                      row.buyingRate === bestBuying.buyingRate;
+                    const isBestSell =
+                      lowestSelling !== null &&
+                      row.sellingRate !== null &&
+                      row.sellingRate === lowestSelling.sellingRate;
+                    return (
                     <tr key={row.id} className="hover:bg-slate-50/70">
                       <td className="px-5 py-3.5">
                         <div className="font-semibold text-slate-900">{row.bankName}</div>
@@ -567,8 +693,15 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
                           {row.manuallyCorrected ? ' · Admin verified' : ''}
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono text-sm font-bold text-slate-900 tabular-nums">
-                        {formatRate(row.buyingRate, row.buyingPrecisionText)}
+                      <td className="px-4 py-3.5 text-right font-mono text-sm font-bold tabular-nums">
+                        <span className={isBestBuy ? 'text-[#0F766E]' : 'text-slate-900'}>
+                          {formatRate(row.buyingRate, row.buyingPrecisionText)}
+                        </span>
+                        {isBestBuy && (
+                          <div className="font-sans text-[10px] font-semibold text-[#0F766E]">
+                            Highest Buying
+                          </div>
+                        )}
                         {row.dailyChangeBuy !== null && row.dailyChangeBuy !== 0 && (
                           <div
                             className={`text-[11px] font-medium ${
@@ -580,8 +713,15 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono text-sm font-bold text-slate-900 tabular-nums">
-                        {formatRate(row.sellingRate, row.sellingPrecisionText)}
+                      <td className="px-4 py-3.5 text-right font-mono text-sm font-bold tabular-nums">
+                        <span className={isBestSell ? 'text-[#164081]' : 'text-slate-900'}>
+                          {formatRate(row.sellingRate, row.sellingPrecisionText)}
+                        </span>
+                        {isBestSell && (
+                          <div className="font-sans text-[10px] font-semibold text-[#164081]">
+                            Lowest Selling
+                          </div>
+                        )}
                         {row.dailyChangeSell !== null && row.dailyChangeSell !== 0 && (
                           <div
                             className={`text-[11px] font-medium ${
@@ -639,7 +779,8 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
                         </a>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -678,7 +819,7 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
         </section>
 
         {/* Full Ethiopian Banks Source Coverage Transparency Panel */}
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <section id="fx-coverage-matrix" className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-display text-base font-bold text-slate-900">
@@ -694,7 +835,9 @@ export const BankFxDashboardView: React.FC<BankFxDashboardViewProps> = ({
               onClick={() => setShowAllBanksMatrix((prev) => !prev)}
               className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
-              {showAllBanksMatrix ? 'Hide Unavailable Banks' : 'Show Full 20-Bank Matrix'}
+              {showAllBanksMatrix
+                ? 'Hide Unavailable Banks'
+                : `Show Full ${bankStatuses.length}-Bank Matrix`}
             </button>
           </div>
 

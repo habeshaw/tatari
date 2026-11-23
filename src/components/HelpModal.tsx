@@ -30,12 +30,13 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   onNavigate,
   onOpenAuth,
 }) => {
-  const initialTab: HelpTab =
-    currentUser?.role === 'admin'
-      ? 'admin'
-      : currentUser?.role === 'employer'
-      ? 'employer'
-      : 'seeker';
+  const isAdmin = currentUser?.role === 'admin' && currentUser?.status === 'approved';
+
+  const initialTab: HelpTab = isAdmin
+    ? 'admin'
+    : currentUser?.role === 'employer'
+    ? 'employer'
+    : 'seeker';
 
   const [tab, setTab] = useState<HelpTab>(initialTab);
 
@@ -43,7 +44,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
     { id: 'seeker', label: 'Job Seekers', icon: <UserCheck className="h-3.5 w-3.5" /> },
     { id: 'employer', label: 'Employers', icon: <Briefcase className="h-3.5 w-3.5" /> },
     { id: 'buyer', label: 'Digital Store Buyers', icon: <ShoppingBag className="h-3.5 w-3.5" /> },
-    { id: 'admin', label: 'Administrators', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+    ...(isAdmin
+      ? [{ id: 'admin' as HelpTab, label: 'Administrators', icon: <ShieldCheck className="h-3.5 w-3.5" /> }]
+      : []),
   ];
 
   const handleGoView = (view: AppView) => {
@@ -92,7 +95,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
         <div
           role="tablist"
           aria-label="Help guide by user role"
-          className="mt-4 grid grid-cols-2 gap-1.5 rounded-lg bg-slate-100 p-1 sm:grid-cols-4"
+          className={`mt-4 grid grid-cols-2 gap-1.5 rounded-lg bg-slate-100 p-1 ${
+            isAdmin ? 'sm:grid-cols-4' : 'sm:grid-cols-3'
+          }`}
         >
           {tabs.map((item) => {
             const active = tab === item.id;
@@ -347,7 +352,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({
             </div>
           )}
 
-          {tab === 'admin' && (
+          {tab === 'admin' && isAdmin && (
             <div className="space-y-4">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <h3 className="font-display text-sm font-bold text-slate-900">

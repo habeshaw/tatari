@@ -25,6 +25,8 @@ export const Header: React.FC<HeaderProps> = ({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const t = TRANSLATIONS[language];
 
+  const isAdmin = currentUser?.role === 'admin' && currentUser?.status === 'approved';
+
   const navItems: { id: AppView; label: string }[] = [
     { id: 'jobs', label: t.navJobs },
     { id: 'fx', label: t.navFx },
@@ -33,13 +35,17 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'store', label: t.navStore },
     { id: 'activity', label: t.navActivity },
     { id: 'employer', label: t.navEmployer },
-    {
-      id: 'admin',
-      label:
-        pendingApprovalCount > 0
-          ? `${t.navAdmin} (${pendingApprovalCount})`
-          : t.navAdmin,
-    },
+    ...(isAdmin
+      ? [
+          {
+            id: 'admin' as AppView,
+            label:
+              pendingApprovalCount > 0
+                ? `${t.navAdmin} (${pendingApprovalCount})`
+                : t.navAdmin,
+          },
+        ]
+      : []),
   ];
 
   const handleNavClick = (view: AppView) => {

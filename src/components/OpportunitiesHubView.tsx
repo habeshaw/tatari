@@ -36,6 +36,7 @@ interface OpportunitiesHubViewProps {
   savedOpportunityIds: string[];
   syncedAt: string | null;
   isSyncing: boolean;
+  isAdmin?: boolean;
   onRefresh: () => void;
   onToggleSaveOpportunity: (oppId: string) => void;
   onNavigateView: (view: AppView) => void;
@@ -52,6 +53,7 @@ export const OpportunitiesHubView: React.FC<OpportunitiesHubViewProps> = ({
   savedOpportunityIds,
   syncedAt,
   isSyncing,
+  isAdmin = false,
   onRefresh,
   onToggleSaveOpportunity,
   onNavigateView,
@@ -62,6 +64,7 @@ export const OpportunitiesHubView: React.FC<OpportunitiesHubViewProps> = ({
   const [universalSearchActive, setUniversalSearchActive] = useState(false);
   const [selectedOppId, setSelectedOppId] = useState<string | null>(null);
   const [hideExpired, setHideExpired] = useState(true);
+  const [showPublicSources, setShowPublicSources] = useState(false);
 
   const moduleCounts = useMemo(() => {
     const map: Record<string, number> = { all: opportunities.length };
@@ -143,14 +146,66 @@ export const OpportunitiesHubView: React.FC<OpportunitiesHubViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={onOpenAdminSources}
+                onClick={isAdmin ? onOpenAdminSources : () => setShowPublicSources((prev) => !prev)}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
-                <span>Sources ({sources.filter((s) => s.status === 'Verified').length} Live)</span>
+                <span>
+                  {isAdmin
+                    ? `Manage Sources (${sources.filter((s) => s.status === 'Verified').length} Live)`
+                    : `Verified Sources (${sources.filter((s) => s.status === 'Verified').length} Live)`}
+                </span>
               </button>
             </div>
           </div>
+
+          {!isAdmin && showPublicSources && (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2 text-xs">
+                <span className="font-semibold text-slate-900">
+                  Active Ethiopian Public Publishers &amp; Provenance Directory
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowPublicSources(false)}
+                  className="font-semibold text-[#164081] hover:underline"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                {sources.map((src) => (
+                  <div
+                    key={src.id}
+                    className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-3 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-900">{src.name}</span>
+                      <span
+                        className={`font-semibold ${
+                          src.status === 'Verified' ? 'text-emerald-700' : 'text-slate-500'
+                        }`}
+                      >
+                        {src.status}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 tabular-nums">
+                      <span>{src.fetchedCount} live items</span>
+                      <a
+                        href={src.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-semibold text-[#164081] hover:underline"
+                      >
+                        <span>{src.domain}</span>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Search + Universal Platform Toggle */}
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -313,10 +368,10 @@ export const OpportunitiesHubView: React.FC<OpportunitiesHubViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={onOpenAdminSources}
+                onClick={isAdmin ? onOpenAdminSources : () => setShowPublicSources(true)}
                 className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
-                View Source Coverage Matrix
+                {isAdmin ? 'Manage Sources (Admin)' : 'View Verified Public Sources'}
               </button>
             </div>
           </div>
