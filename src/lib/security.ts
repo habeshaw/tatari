@@ -196,6 +196,9 @@ export interface SeekerApplyRegistrationInput {
   applicantEmail: string;
   phone: string;
   resumeUrl: string;
+  resumeId?: string;
+  resumeFileName?: string;
+  resumeText?: string;
   yearsExperience: string;
   coverNote: string;
   password?: string;
@@ -253,6 +256,9 @@ export function registerSeekerAndCreateApplication(
       applicantEmail: currentUser.email.toLowerCase(),
       phone: cleanPhone,
       resumeUrl: cleanResume,
+      resumeId: input.resumeId,
+      resumeFileName: input.resumeFileName,
+      resumeText: input.resumeText,
       yearsExperience: input.yearsExperience,
       coverNote: input.coverNote.trim(),
       status: 'Submitted',
@@ -297,6 +303,9 @@ export function registerSeekerAndCreateApplication(
     applicantEmail: cleanEmail,
     phone: cleanPhone,
     resumeUrl: cleanResume,
+    resumeId: input.resumeId,
+    resumeFileName: input.resumeFileName,
+    resumeText: input.resumeText,
     yearsExperience: input.yearsExperience,
     coverNote: input.coverNote.trim(),
     status: 'Submitted',
@@ -636,7 +645,23 @@ export interface SelfProfileUpdateInput {
   companyName?: string;
   tinNumber?: string;
   headline?: string;
+  location?: string;
+  bio?: string;
+  avatarDataUrl?: string;
+  skills?: string[];
+  languages?: string[];
+  certifications?: string[];
+  careerInterests?: string[];
+  yearsExperience?: number;
+  experience?: UserProfile['experience'];
+  education?: UserProfile['education'];
+  resumes?: UserProfile['resumes'];
   defaultResumeUrl?: string;
+  companyWebsite?: string;
+  companyLocation?: string;
+  companyDescription?: string;
+  companyLogoDataUrl?: string;
+  isRecruitmentAgency?: boolean;
 }
 
 export function updateOwnProfile(
@@ -677,6 +702,11 @@ export function updateOwnProfile(
     throw new Error('Default CV / Resume URL must start with http:// or https://.');
   }
 
+  const cleanWebsite = updates.companyWebsite?.trim();
+  if (cleanWebsite && !/^https?:\/\/\S+$/i.test(cleanWebsite)) {
+    throw new Error('Company website URL must start with http:// or https://.');
+  }
+
   return users.map((u) =>
     u.email.toLowerCase() === cleanActor
       ? {
@@ -686,8 +716,44 @@ export function updateOwnProfile(
           companyName:
             existing.role === 'employer' ? updates.companyName?.trim() : u.companyName,
           tinNumber: existing.role === 'employer' ? updates.tinNumber?.trim() : u.tinNumber,
-          headline: updates.headline?.trim() || undefined,
-          defaultResumeUrl: cleanResume || undefined,
+          headline: updates.headline !== undefined ? updates.headline.trim() || undefined : u.headline,
+          location: updates.location !== undefined ? updates.location.trim() || undefined : u.location,
+          bio: updates.bio !== undefined ? updates.bio.trim() || undefined : u.bio,
+          avatarDataUrl:
+            updates.avatarDataUrl !== undefined ? updates.avatarDataUrl : u.avatarDataUrl,
+          skills: updates.skills !== undefined ? updates.skills : u.skills,
+          languages: updates.languages !== undefined ? updates.languages : u.languages,
+          certifications:
+            updates.certifications !== undefined ? updates.certifications : u.certifications,
+          careerInterests:
+            updates.careerInterests !== undefined ? updates.careerInterests : u.careerInterests,
+          yearsExperience:
+            updates.yearsExperience !== undefined ? updates.yearsExperience : u.yearsExperience,
+          experience: updates.experience !== undefined ? updates.experience : u.experience,
+          education: updates.education !== undefined ? updates.education : u.education,
+          resumes: updates.resumes !== undefined ? updates.resumes : u.resumes,
+          defaultResumeUrl:
+            updates.defaultResumeUrl !== undefined ? cleanResume || undefined : u.defaultResumeUrl,
+          companyWebsite:
+            existing.role === 'employer' && updates.companyWebsite !== undefined
+              ? cleanWebsite || undefined
+              : u.companyWebsite,
+          companyLocation:
+            existing.role === 'employer' && updates.companyLocation !== undefined
+              ? updates.companyLocation.trim() || undefined
+              : u.companyLocation,
+          companyDescription:
+            existing.role === 'employer' && updates.companyDescription !== undefined
+              ? updates.companyDescription.trim() || undefined
+              : u.companyDescription,
+          companyLogoDataUrl:
+            existing.role === 'employer' && updates.companyLogoDataUrl !== undefined
+              ? updates.companyLogoDataUrl
+              : u.companyLogoDataUrl,
+          isRecruitmentAgency:
+            existing.role === 'employer' && updates.isRecruitmentAgency !== undefined
+              ? updates.isRecruitmentAgency
+              : u.isRecruitmentAgency,
           updatedAt: nowIso,
         }
       : u

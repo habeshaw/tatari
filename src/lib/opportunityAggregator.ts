@@ -9,8 +9,10 @@ import type {
   AggregatedOpportunity,
   AggregationSourceRecord,
   BankFxRateRecord,
+  CapitalMarketEquityRecord,
   DigitalProduct,
   JobListing,
+  NewsArticleRecord,
   OpportunityModuleType,
   TrainingProgram,
 } from '../types/domain.ts';
@@ -539,7 +541,7 @@ export function deduplicateOpportunities(
 
 export interface UniversalSearchResult {
   id: string;
-  section: 'jobs' | 'fx' | 'opportunities' | 'training' | 'store';
+  section: 'news' | 'capital_market' | 'jobs' | 'fx' | 'opportunities' | 'training' | 'store';
   badge: string;
   title: string;
   subtitle: string;
@@ -554,11 +556,44 @@ export function runUniversalSearch(params: {
   opportunities: AggregatedOpportunity[];
   trainingPrograms: TrainingProgram[];
   products: DigitalProduct[];
+  newsArticles?: NewsArticleRecord[];
+  capitalEquities?: CapitalMarketEquityRecord[];
 }): UniversalSearchResult[] {
   const q = params.query.trim().toLowerCase();
   if (q.length < 2) return [];
 
   const results: UniversalSearchResult[] = [];
+
+  for (const eq of params.capitalEquities || []) {
+    if (`${eq.symbol} ${eq.companyName} ${eq.sector}`.toLowerCase().includes(q)) {
+      results.push({
+        id: `eq-${eq.symbol}`,
+        section: 'capital_market',
+        badge: `ESX · ${eq.symbol}`,
+        title: `${eq.companyName} (${eq.symbol})`,
+        subtitle:
+          eq.lastPriceEtb !== null
+            ? `Last: ETB ${eq.lastPriceEtb.toLocaleString('en-US', { minimumFractionDigits: 2 })} · ${eq.sector}`
+            : `Listed Issuer · ${eq.sector}`,
+        sourceLabel: eq.sourceName,
+        sourceUrl: eq.esxProfileUrl,
+      });
+    }
+  }
+
+  for (const n of params.newsArticles || []) {
+    if (`${n.title} ${n.publisherName} ${n.coverage} ${n.category}`.toLowerCase().includes(q)) {
+      results.push({
+        id: n.id,
+        section: 'news',
+        badge: `${n.publisherName} · ${n.coverage}`,
+        title: n.title,
+        subtitle: n.summary,
+        sourceLabel: n.publisherDomain,
+        sourceUrl: n.sourceUrl,
+      });
+    }
+  }
 
   for (const j of params.jobs) {
     if (j.status !== 'approved') continue;

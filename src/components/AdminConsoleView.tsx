@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
+  AlertTriangle,
+  BarChart3,
   CheckCircle2,
   Clock,
   Download,
@@ -13,6 +15,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Sparkles,
   Trash2,
   UserCog,
   UserPlus,
@@ -24,7 +27,7 @@ import {
   type AdminCreateUserInput,
   type AdminUserUpdateInput,
 } from '../lib/security';
-import { formatCurrencyEtb, formatRelativeDays } from '../lib/storeLogic';
+import { formatCurrencyEtb, formatRelativeDays, JOB_POSTING_PACKAGES } from '../lib/storeLogic';
 import { AdminSourcesHealthPanel } from './AdminSourcesHealthPanel';
 import {
   TRAINING_DELIVERY_MODES,
@@ -44,6 +47,7 @@ import type {
   MaterialOrder,
   OpportunityModuleType,
   PaymentReceipt,
+  ReportedListingEntry,
   TrainingCategory,
   TrainingDeliveryMode,
   TrainingProgram,
@@ -70,11 +74,18 @@ interface AdminConsoleViewProps {
   aggregatorOverview?: AggregatorOverviewResponse | null;
   fxRates?: BankFxRateRecord[];
   opportunities?: AggregatedOpportunity[];
+  reportedListings?: ReportedListingEntry[];
   isSyncingAggregator?: boolean;
-  requestedTab?: 'payments' | 'jobs' | 'store' | 'training' | 'sources' | 'users';
+  requestedTab?: 'payments' | 'jobs' | 'store' | 'training' | 'sources' | 'users' | 'analytics';
+  onResolveReport?: (
+    reportId: string,
+    status: 'resolved' | 'dismissed',
+    note?: string,
+    pauseJobId?: string
+  ) => void;
   onSyncExternalJobs?: () => void;
   onTriggerAggregatorSync?: (
-    scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'single',
+    scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'news' | 'capital_market' | 'single',
     sourceId?: string
   ) => Promise<void>;
   onAddCustomSource?: (payload: {
@@ -147,8 +158,10 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   aggregatorOverview = null,
   fxRates = [],
   opportunities = [],
+  reportedListings = [],
   isSyncingAggregator = false,
   requestedTab,
+  onResolveReport,
   onSyncExternalJobs,
   onTriggerAggregatorSync,
   onAddCustomSource,
@@ -177,9 +190,10 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
   onExportCsv,
   onOpenAdminSignIn,
 }) => {
-  const [tab, setTab] = useState<'payments' | 'jobs' | 'store' | 'training' | 'sources' | 'users'>(
-    requestedTab || 'payments'
-  );
+  const [tab, setTab] = useState<
+    'payments' | 'jobs' | 'store' | 'training' | 'sources' | 'users' | 'analytics'
+  >(requestedTab || 'payments');
+  const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (requestedTab) {
@@ -609,6 +623,23 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
           >
             Users &amp; Audit Logs
             {pendingUsersCount > 0 ? ` (${pendingUsersCount} pending)` : ''}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'analytics'}
+            onClick={() => setTab('analytics')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              tab === 'analytics'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+            Analytics &amp; Moderation
+            {reportedListings.filter((r) => r.status === 'open').length > 0
+              ? ` (${reportedListings.filter((r) => r.status === 'open').length} open)`
+              : ''}
           </button>
         </div>
       </div>
@@ -1420,6 +1451,387 @@ export const AdminConsoleView: React.FC<AdminConsoleViewProps> = ({
           }}
         />
       )}
+
+      {/* Tab: Analytics, AI Telemetry & Moderation Reports */}
+      {tab === 'analytics' && (() => {
+        const seekerCount = users.filter((u) => u.role === 'seeker').length;
+        const employerCount = users.filter((u) => u.role === 'employer').length;
+        const adminCount = users.filter((u) => u.role === 'admin').length;
+
+        const categoryCountsMap = new Map<string, number>();
+        for (const job of jobs) {
+          categoryCountsMap.set(job.category, (categoryCountsMap.get(job.category) || 0) + 1);
+        }
+        const topCategories = Array.from(categoryCountsMap.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6);
+        const maxCategoryCount = Math.max(1, ...topCategories.map((c) => c[1]));
+
+        const stageOrder = [
+          'Submitted',
+          'Under Review',
+          'Shortlisted',
+          'Interview',
+          'Offered',
+          'Hired',
+          'Rejected',
+        ] as const;
+        const stageCounts = stageOrder.map((st) => ({
+          stage: st,
+          count: applications.filter((a) => a.status === st).length,
+        }));
+        const maxStageCount = Math.max(1, ...stageCounts.map((s) => s.count));
+
+        const aiUsage = aggregatorOverview?.aiUsage || {
+          resumeScans: 0,
+          jobMatches: 0,
+          recommendationsRuns: 0,
+          interviewSessions: 0,
+          employerScreenings: 0,
+          totalAiRequests: 0,
+          lastAiCallAt: null,
+        };
+
+        const sortedReports = [...reportedListings].sort((a, b) => {
+          if (a.status === 'open' && b.status !== 'open') return -1;
+          if (a.status !== 'open' && b.status === 'open') return 1;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+
+        return (
+          <section className="mt-6 space-y-6">
+            {/* Platform KPI Overview */}
+            <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <dt className="text-xs font-medium text-slate-500">Registered Accounts</dt>
+                <dd className="mt-1 font-mono text-2xl font-bold text-slate-900 tabular-nums">
+                  {users.length}
+                </dd>
+                <div className="mt-1 text-[11px] text-slate-500 tabular-nums">
+                  {seekerCount} Seekers · {employerCount} Employers · {adminCount} Admins
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <dt className="text-xs font-medium text-slate-500">Live vs Total Vacancies</dt>
+                <dd className="mt-1 font-mono text-2xl font-bold text-[#164081] tabular-nums">
+                  {liveJobsCount} / {jobs.length}
+                </dd>
+                <div className="mt-1 text-[11px] text-slate-500 tabular-nums">
+                  {jobs.filter((j) => j.isFeatured).length} Sponsored/Featured
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <dt className="text-xs font-medium text-slate-500">Total Job Applications</dt>
+                <dd className="mt-1 font-mono text-2xl font-bold text-[#0F766E] tabular-nums">
+                  {applications.length}
+                </dd>
+                <div className="mt-1 text-[11px] text-slate-500 tabular-nums">
+                  {applications.filter((a) => a.status === 'Hired' || a.status === 'Offered').length}{' '}
+                  Offered / Hired
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <dt className="text-xs font-medium text-slate-500">Verified Revenue (ETB)</dt>
+                <dd className="mt-1 font-mono text-2xl font-bold text-emerald-700 tabular-nums">
+                  {formatCurrencyEtb(verifiedTotalEtb)}
+                </dd>
+                <div className="mt-1 text-[11px] text-slate-500 tabular-nums">
+                  {orders.filter((o) => o.status === 'approved').length} approved digital orders
+                </div>
+              </div>
+            </dl>
+
+            {/* AI Recruitment Engine Usage */}
+            <div className="rounded-xl border border-[#164081]/20 bg-gradient-to-br from-[#F0F5FF] to-white p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-[#164081]" />
+                  <h2 className="font-display text-base font-bold text-slate-900">
+                    AI Career &amp; Recruitment Usage Analytics
+                  </h2>
+                </div>
+                <span className="text-xs text-slate-500 tabular-nums">
+                  {aiUsage.lastAiCallAt
+                    ? `Last AI Run: ${new Date(aiUsage.lastAiCallAt).toLocaleString()}`
+                    : 'No AI calls recorded in this server session yet'}
+                </span>
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                {[
+                  { label: 'Resume Scans', val: aiUsage.resumeScans },
+                  { label: 'Job Matches', val: aiUsage.jobMatches },
+                  { label: 'Smart Recs', val: aiUsage.recommendationsRuns },
+                  { label: 'Mock Interviews', val: aiUsage.interviewSessions },
+                  { label: 'Employer Screens', val: aiUsage.employerScreenings },
+                  { label: 'Total AI Calls', val: aiUsage.totalAiRequests },
+                ].map((m) => (
+                  <div key={m.label} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <dt className="text-[11px] font-medium text-slate-500">{m.label}</dt>
+                    <dd className="mt-1 font-mono text-lg font-bold text-slate-900 tabular-nums">
+                      {m.val}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            {/* Visual SVG Charts Row */}
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <h3 className="font-display text-sm font-bold text-slate-900">
+                  Vacancies by Sector / Category
+                </h3>
+                <p className="text-xs text-slate-500">Live distribution across Ethiopian hiring sectors</p>
+                <svg
+                  viewBox={`0 0 460 ${Math.max(120, topCategories.length * 36 + 16)}`}
+                  className="mt-4 w-full"
+                  role="img"
+                  aria-label="Job listings by category bar chart"
+                >
+                  {topCategories.map(([cat, count], idx) => {
+                    const y = idx * 36 + 12;
+                    const barW = Math.max(14, Math.round((count / maxCategoryCount) * 230));
+                    return (
+                      <g key={cat} transform={`translate(0, ${y})`}>
+                        <text x="0" y="14" className="fill-slate-700 text-[11px] font-semibold">
+                          {cat.slice(0, 22)}
+                        </text>
+                        <rect
+                          x="160"
+                          y="3"
+                          width="230"
+                          height="16"
+                          rx="4"
+                          className="fill-slate-100"
+                        />
+                        <rect
+                          x="160"
+                          y="3"
+                          width={barW}
+                          height="16"
+                          rx="4"
+                          className="fill-[#164081]"
+                        />
+                        <text
+                          x="402"
+                          y="15"
+                          className="fill-slate-900 font-mono text-[11px] font-bold"
+                        >
+                          {count}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <h3 className="font-display text-sm font-bold text-slate-900">
+                  Recruitment Funnel by Application Stage
+                </h3>
+                <p className="text-xs text-slate-500">
+                  End-to-end applicant progression across {applications.length} applications
+                </p>
+                <svg
+                  viewBox={`0 0 460 ${stageCounts.length * 32 + 16}`}
+                  className="mt-4 w-full"
+                  role="img"
+                  aria-label="Application pipeline stage distribution chart"
+                >
+                  {stageCounts.map((row, idx) => {
+                    const y = idx * 32 + 10;
+                    const barW =
+                      row.count === 0 ? 4 : Math.max(12, Math.round((row.count / maxStageCount) * 230));
+                    return (
+                      <g key={row.stage} transform={`translate(0, ${y})`}>
+                        <text x="0" y="13" className="fill-slate-700 text-[11px] font-semibold">
+                          {row.stage}
+                        </text>
+                        <rect
+                          x="140"
+                          y="2"
+                          width="230"
+                          height="15"
+                          rx="4"
+                          className="fill-slate-100"
+                        />
+                        <rect
+                          x="140"
+                          y="2"
+                          width={barW}
+                          height="15"
+                          rx="4"
+                          className={
+                            row.stage === 'Rejected'
+                              ? 'fill-rose-500'
+                              : row.stage === 'Hired' || row.stage === 'Offered'
+                              ? 'fill-[#0F766E]'
+                              : 'fill-[#164081]'
+                          }
+                        />
+                        <text
+                          x="382"
+                          y="13"
+                          className="fill-slate-900 font-mono text-[11px] font-bold"
+                        >
+                          {row.count}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+            </div>
+
+            {/* Commercial Packages Summary */}
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-display text-sm font-bold text-slate-900">
+                    Commercial Job Posting Packages &amp; Revenue Breakdown
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Active pricing tiers billed with 15% Ethiopian VAT
+                  </p>
+                </div>
+                <div className="font-mono text-xs font-semibold text-slate-700">
+                  Jobs {formatCurrencyEtb(jobRevenueEtb)} · Store {formatCurrencyEtb(storeRevenueEtb)}
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                {JOB_POSTING_PACKAGES.map((pkg) => (
+                  <div key={pkg.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-display text-xs font-bold text-slate-900">
+                        {pkg.name}
+                      </span>
+                      <span className="font-mono text-xs font-bold text-[#164081]">
+                        {formatCurrencyEtb(pkg.priceEtb)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-600">
+                      {pkg.durationDays} days active · {pkg.summary}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Reported Listings & Complaints Moderation Queue */}
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <h3 className="font-display text-sm font-bold text-slate-900">
+                    Reported Listings &amp; Complaints Moderation ({sortedReports.length})
+                  </h3>
+                </div>
+                <span className="text-xs text-slate-500">
+                  {sortedReports.filter((r) => r.status === 'open').length} open review(s)
+                </span>
+              </div>
+
+              {sortedReports.length === 0 ? (
+                <p className="mt-4 text-xs text-slate-500">
+                  No flagged vacancies or user complaints have been submitted.
+                </p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {sortedReports.map((rep) => (
+                    <article
+                      key={rep.id}
+                      className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-4 lg:flex-row lg:items-center"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span
+                            className={`rounded px-2 py-0.5 text-[11px] font-bold uppercase ${
+                              rep.status === 'open'
+                                ? 'bg-amber-100 text-amber-800'
+                                : rep.status === 'resolved'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-slate-200 text-slate-700'
+                            }`}
+                          >
+                            {rep.status}
+                          </span>
+                          <span className="font-semibold text-slate-900">{rep.targetTitle}</span>
+                          <span className="text-slate-500">
+                            · Reported by {rep.reporterEmail} · {formatRelativeDays(rep.createdAt)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-700">Reason: {rep.reason}</p>
+                        {rep.resolutionNote && (
+                          <p className="text-[11px] font-medium text-emerald-700">
+                            Resolution Note: {rep.resolutionNote}
+                          </p>
+                        )}
+                      </div>
+
+                      {rep.status === 'open' && onResolveReport && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            value={reportNotes[rep.id] || ''}
+                            onChange={(e) =>
+                              setReportNotes((prev) => ({ ...prev, [rep.id]: e.target.value }))
+                            }
+                            placeholder="Resolution note..."
+                            aria-label={`Resolution note for ${rep.targetTitle}`}
+                            className="w-44 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900"
+                          />
+                          {rep.targetType === 'job' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onResolveReport(
+                                  rep.id,
+                                  'resolved',
+                                  reportNotes[rep.id] || 'Paused flagged job listing.',
+                                  rep.targetId
+                                )
+                              }
+                              className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-800"
+                            >
+                              Pause Job &amp; Resolve
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onResolveReport(
+                                rep.id,
+                                'resolved',
+                                reportNotes[rep.id] || 'Reviewed and resolved.'
+                              )
+                            }
+                            className="rounded-lg bg-[#0F766E] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0D625C]"
+                          >
+                            Resolve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onResolveReport(
+                                rep.id,
+                                'dismissed',
+                                reportNotes[rep.id] || 'No policy violation found.'
+                              )
+                            }
+                            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Admin Create User Modal */}
       {createUserOpen && (

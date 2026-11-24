@@ -1,0 +1,19 @@
+{
+  "name": "adey-financial-intelligence-platform",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "ADEY Ethiopian Foreign Exchange Intelligence & Historical Analytics Platform",
+  "main": "index.js",
+  "scripts": {
+    "build": "echo 'Build ready'"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.8",
+    "exceljs": "^4.4.0",
+    "pdfkit": "^0.14.0",
+    "docx": "^8.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

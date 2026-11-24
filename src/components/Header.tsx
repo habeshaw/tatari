@@ -8,6 +8,7 @@ interface HeaderProps {
   onNavigate: (view: AppView) => void;
   currentUser: UserProfile | null;
   pendingApprovalCount: number;
+  unreadNotificationCount?: number;
   language: Language;
   onOpenAuth: () => void;
   onOpenHelp: () => void;
@@ -18,6 +19,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigate,
   currentUser,
   pendingApprovalCount,
+  unreadNotificationCount = 0,
   language,
   onOpenAuth,
   onOpenHelp,
@@ -29,11 +31,18 @@ export const Header: React.FC<HeaderProps> = ({
 
   const navItems: { id: AppView; label: string }[] = [
     { id: 'jobs', label: t.navJobs },
+    { id: 'ai_studio', label: t.navAiStudio },
     { id: 'fx', label: t.navFx },
+    { id: 'capital_market', label: t.navCapitalMarket },
+    { id: 'news', label: t.navNews },
     { id: 'opportunities', label: t.navOpportunities },
     { id: 'training', label: t.navTraining },
     { id: 'store', label: t.navStore },
-    { id: 'activity', label: t.navActivity },
+    {
+      id: 'activity',
+      label:
+        unreadNotificationCount > 0 ? `${t.navActivity} (${unreadNotificationCount})` : t.navActivity,
+    },
     { id: 'employer', label: t.navEmployer },
     ...(isAdmin
       ? [
@@ -55,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2.5 px-4 sm:px-6 lg:px-8">
         {/* Zone 1: Single-line Brand Wordmark */}
         <button
           type="button"
@@ -68,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Zone 2: Concise single-line navigation links */}
         <nav
           aria-label="Primary Navigation"
-          className="hidden lg:flex items-center gap-5 text-sm font-medium text-slate-600"
+          className="hidden lg:flex items-center gap-2.5 xl:gap-3.5 text-[12px] xl:text-[13px] font-medium text-slate-600"
         >
           {navItems.map((item) => {
             const isActive = activeView === item.id;
@@ -77,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => handleNavClick(item.id)}
-                className={`relative py-5 text-[13px] font-medium whitespace-nowrap shrink-0 transition-colors focus-visible:outline-2 focus-visible:outline-[#164081] ${
+                className={`relative py-5 font-medium whitespace-nowrap shrink-0 transition-colors focus-visible:outline-2 focus-visible:outline-[#164081] ${
                   isActive
                     ? 'text-[#164081] font-semibold'
                     : 'text-slate-600 hover:text-slate-900'

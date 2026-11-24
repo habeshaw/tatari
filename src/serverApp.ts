@@ -47,21 +47,67 @@ import {
   parseWordPressPostsToOpportunities,
   type WordPressPostRaw,
 } from './lib/opportunityAggregator.ts';
+import {
+  TOP_NEWS_SOURCES,
+  deduplicateAndSortNews,
+  parseNewsRssXml,
+  parseWordPressNewsPosts,
+  type NewsWordPressPostRaw,
+  type TopNewsSourceDefinition,
+} from './lib/newsAggregator.ts';
+import {
+  CAPITAL_MARKET_SOURCES_META,
+  buildCapitalMarketEquitiesAndSummary,
+  parseEsxAnnouncementsWpPosts,
+  parseEsxCompanyDirectoryProfile,
+  parseEsxInterbankDataHtml,
+  parseEsxListedCompaniesHtml,
+  parseEsxListedTBillsHtml,
+  parseStockMarketEtHistoriesHtml,
+  type EsxCompanyProfileStats,
+  type StockMarketEtSeries,
+} from './lib/capitalMarketAggregator.ts';
+import {
+  answerRecruiterPoolQuestion,
+  buildDeterministicInterviewQuestions,
+  computeDeterministicJobMatch,
+  computeDeterministicResumeAnalysis,
+  evaluateInterviewAnswerDeterministic,
+  rankJobsForCandidate,
+  sanitizeResumePlainText,
+  screenApplicantsDeterministic,
+  validateUploadedCvBinary,
+} from './lib/aiRecruitment.ts';
 import type {
   AggregatedOpportunity,
   AggregationSourceRecord,
   AggregatorOverviewResponse,
+  AiApplicantScreeningItem,
+  AiEngineStatusResponse,
+  AiInterviewEvaluation,
+  AiInterviewQuestion,
+  AiJobMatchResult,
+  AiResumeAnalysisResult,
+  AiUsageAnalytics,
   BankFxApiResponse,
   BankFxHistoryPoint,
   BankFxRateRecord,
   BankFxSourceStatus,
+  CapitalMarketAnnouncement,
+  CapitalMarketApiResponse,
+  CapitalMarketSourceStatus,
   CollectionErrorEntry,
   CollectionRunEntry,
   ExternalJobSourceStatus,
+  JobApplication,
   JobListing,
   NbeIndicativeMidRate,
+  NewsApiResponse,
+  NewsArticleRecord,
+  NewsSourceStatus,
   OpportunitiesApiResponse,
   OpportunityModuleType,
+  UserProfile,
 } from './types/domain.ts';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -98,10 +144,17 @@ interface PersistedAggregatorState {
   opportunitySources: AggregationSourceRecord[];
   opportunitiesSyncedAt: string | null;
   opportunitiesExpiresAt: number;
+  newsArticles: NewsArticleRecord[];
+  newsSources: NewsSourceStatus[];
+  newsSyncedAt: string | null;
+  newsExpiresAt: number;
+  capitalMarket: CapitalMarketApiResponse | null;
+  capitalMarketExpiresAt: number;
   collectionRuns: CollectionRunEntry[];
   collectionErrors: CollectionErrorEntry[];
   duplicatesDetected: number;
   anomaliesCount: number;
+  aiUsage: AiUsageAnalytics;
 }
 
 function buildInitialSourceRecords(): AggregationSourceRecord[] {
@@ -124,6 +177,23 @@ function buildInitialSourceRecords(): AggregationSourceRecord[] {
   }));
 }
 
+function buildInitialNewsSourceStatuses(): NewsSourceStatus[] {
+  return TOP_NEWS_SOURCES.map((s) => ({
+    id: s.id,
+    name: s.name,
+    domain: s.domain,
+    homeUrl: s.homeUrl,
+    feedUrl: s.feedUrl,
+    coverage: s.coverage,
+    language: s.language,
+    method: s.method,
+    status: 'Stale',
+    articlesCollected: 0,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+  }));
+}
+
 function createEmptyStore(): PersistedAggregatorState {
   return {
     jobs: [],
@@ -140,10 +210,25 @@ function createEmptyStore(): PersistedAggregatorState {
     opportunitySources: buildInitialSourceRecords(),
     opportunitiesSyncedAt: null,
     opportunitiesExpiresAt: 0,
+    newsArticles: [],
+    newsSources: buildInitialNewsSourceStatuses(),
+    newsSyncedAt: null,
+    newsExpiresAt: 0,
+    capitalMarket: null,
+    capitalMarketExpiresAt: 0,
     collectionRuns: [],
     collectionErrors: [],
     duplicatesDetected: 0,
     anomaliesCount: 0,
+    aiUsage: {
+      resumeScans: 0,
+      jobMatches: 0,
+      recommendationsRuns: 0,
+      interviewSessions: 0,
+      employerScreenings: 0,
+      totalAiRequests: 0,
+      lastAiCallAt: null,
+    },
   };
 }
 
@@ -162,15 +247,26 @@ function loadPersistedStore(): PersistedAggregatorState {
       ...existingSources.filter((e) => e.isCustom),
     ];
 
+    const defaultNews = buildInitialNewsSourceStatuses();
+    const existingNewsSources = Array.isArray(parsed.newsSources) ? parsed.newsSources : [];
+    const mergedNewsSources = defaultNews.map(
+      (def) => existingNewsSources.find((e) => e.id === def.id) || def
+    );
+
     return {
       ...empty,
       ...parsed,
       opportunitySources: mergedSources,
+      newsSources: mergedNewsSources,
+      newsArticles: Array.isArray(parsed.newsArticles) ? parsed.newsArticles : [],
       collectionRuns: Array.isArray(parsed.collectionRuns) ? parsed.collectionRuns.slice(0, 50) : [],
       collectionErrors: Array.isArray(parsed.collectionErrors)
         ? parsed.collectionErrors.slice(0, 100)
         : [],
       fxHistory: Array.isArray(parsed.fxHistory) ? parsed.fxHistory.slice(-1500) : [],
+      aiUsage: parsed.aiUsage
+        ? { ...empty.aiUsage, ...parsed.aiUsage }
+        : empty.aiUsage,
     };
   } catch {
     return empty;
@@ -189,6 +285,8 @@ let store: PersistedAggregatorState = loadPersistedStore();
 let inFlightJobsSync: Promise<ExternalJobsApiResponse> | null = null;
 let inFlightFxSync: Promise<BankFxApiResponse> | null = null;
 let inFlightOppSync: Promise<OpportunitiesApiResponse> | null = null;
+let inFlightNewsSync: Promise<NewsApiResponse> | null = null;
+let inFlightCapitalSync: Promise<CapitalMarketApiResponse> | null = null;
 let isFullSyncRunning = false;
 
 export function isSafePublicHttpUrl(rawUrl: string): {
@@ -231,7 +329,7 @@ async function fetchWithRetry(
   url: string,
   options: RequestInit & { timeoutMs?: number; retries?: number } = {}
 ): Promise<Response> {
-  const { timeoutMs = 9500, retries = 1, ...init } = options;
+  const { timeoutMs = 11000, retries = 1, ...init } = options;
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -239,19 +337,60 @@ async function fetchWithRetry(
         ...init,
         signal: AbortSignal.timeout(timeoutMs),
       });
-      if (!res.ok && attempt < retries && res.status >= 500) {
-        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+      if (!res.ok && attempt < retries && (res.status === 429 || res.status >= 500)) {
+        await res.text().catch(() => {});
+        await new Promise((r) => setTimeout(r, 450 * (attempt + 1)));
         continue;
       }
       return res;
     } catch (err) {
       lastError = err;
       if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        await new Promise((r) => setTimeout(r, 350 * (attempt + 1)));
       }
     }
   }
   throw lastError instanceof Error ? lastError : new Error('Network request failed');
+}
+
+async function fetchTextImmediate(
+  url: string,
+  options: RequestInit & { timeoutMs?: number; retries?: number } = {}
+): Promise<{ ok: true; status: number; text: string } | { ok: false; status: number; error: string }> {
+  try {
+    const res = await fetchWithRetry(url, options);
+    const text = await res.text();
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: `HTTP ${res.status}` };
+    }
+    return { ok: true, status: res.status, text };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      error: err instanceof Error ? err.message : 'Network request failed',
+    };
+  }
+}
+
+async function fetchJsonImmediate<T>(
+  url: string,
+  options: RequestInit & { timeoutMs?: number; retries?: number } = {}
+): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; error: string }> {
+  try {
+    const res = await fetchWithRetry(url, options);
+    const raw = await res.text();
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: `HTTP ${res.status}` };
+    }
+    return { ok: true, status: res.status, data: JSON.parse(raw) as T };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      error: err instanceof Error ? err.message : 'Invalid JSON or network error',
+    };
+  }
 }
 
 function recordError(
@@ -975,6 +1114,467 @@ async function collectAllOpportunities(forceRefresh: boolean): Promise<Opportuni
   }
 }
 
+// ---------- Top News Aggregator (10 Global, Africa & Ethiopia Outlets) ----------
+
+async function fetchNewsFeedCandidate(
+  def: TopNewsSourceDefinition,
+  feedUrl: string,
+  method: TopNewsSourceDefinition['method'],
+  syncedAt: string
+): Promise<{ articles: NewsArticleRecord[]; error?: string }> {
+  const acceptHeader =
+    method === 'wp_rest_json'
+      ? 'application/json'
+      : 'application/rss+xml, application/xml, text/xml, */*';
+
+  if (method === 'wp_rest_json') {
+    const res = await fetchJsonImmediate<NewsWordPressPostRaw[]>(feedUrl, {
+      headers: { ...BROWSER_HEADERS, accept: acceptHeader },
+      timeoutMs: 10000,
+      retries: 1,
+    });
+    if (!res.ok) {
+      return { articles: [], error: res.error };
+    }
+    return { articles: parseWordPressNewsPosts(res.data, def, syncedAt, 10) };
+  }
+
+  const res = await fetchTextImmediate(feedUrl, {
+    headers: { ...BROWSER_HEADERS, accept: acceptHeader },
+    timeoutMs: 10000,
+    retries: 1,
+  });
+  if (!res.ok) {
+    return { articles: [], error: res.error };
+  }
+  const effectiveDef: TopNewsSourceDefinition = { ...def, method };
+  return { articles: parseNewsRssXml(res.text, effectiveDef, syncedAt, 10) };
+}
+
+async function fetchSingleNewsSource(
+  def: TopNewsSourceDefinition,
+  syncedAt: string,
+  staggerIndex: number = 0
+): Promise<{
+  articles: NewsArticleRecord[];
+  status: NewsSourceStatus;
+  failed: boolean;
+}> {
+  try {
+    if (def.method === 'news_index_rss' && staggerIndex > 0) {
+      await new Promise((r) => setTimeout(r, staggerIndex * 110));
+    }
+
+    let usedMethod = def.method;
+    let usedUrl = def.feedUrl;
+    let attempt = await fetchNewsFeedCandidate(def, def.feedUrl, def.method, syncedAt);
+
+    if (attempt.articles.length === 0 && def.fallbackFeedUrl) {
+      const fbMethod = def.fallbackMethod || 'news_index_rss';
+      const fallbackAttempt = await fetchNewsFeedCandidate(
+        def,
+        def.fallbackFeedUrl,
+        fbMethod,
+        syncedAt
+      );
+      if (fallbackAttempt.articles.length > 0) {
+        attempt = fallbackAttempt;
+        usedMethod = fbMethod;
+        usedUrl = def.fallbackFeedUrl;
+      } else if (!attempt.error && fallbackAttempt.error) {
+        attempt.error = fallbackAttempt.error;
+      }
+    }
+
+    const { articles } = attempt;
+    const errMsg = articles.length === 0 ? attempt.error || 'Feed returned 0 articles.' : undefined;
+    if (articles.length === 0 && errMsg) {
+      recordError(`news-${def.id}`, def.name, 'news', errMsg);
+    }
+
+    return {
+      articles,
+      failed: articles.length === 0,
+      status: {
+        id: def.id,
+        name: def.name,
+        domain: def.domain,
+        homeUrl: def.homeUrl,
+        feedUrl: usedUrl,
+        coverage: def.coverage,
+        language: def.language,
+        method: usedMethod,
+        status: articles.length > 0 ? 'Verified' : errMsg?.startsWith('HTTP') || errMsg ? 'Collection failed' : 'Stale',
+        articlesCollected: articles.length,
+        lastAttemptAt: syncedAt,
+        lastSuccessAt: articles.length > 0 ? syncedAt : null,
+        errorMessage: errMsg,
+      },
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : `Unable to reach ${def.domain}`;
+    recordError(`news-${def.id}`, def.name, 'news', msg);
+    return {
+      articles: [],
+      failed: true,
+      status: {
+        id: def.id,
+        name: def.name,
+        domain: def.domain,
+        homeUrl: def.homeUrl,
+        feedUrl: def.feedUrl,
+        coverage: def.coverage,
+        language: def.language,
+        method: def.method,
+        status: 'Collection failed',
+        articlesCollected: 0,
+        lastAttemptAt: syncedAt,
+        lastSuccessAt: null,
+        errorMessage: msg,
+      },
+    };
+  }
+}
+
+async function collectAllTopNews(forceRefresh: boolean): Promise<NewsApiResponse> {
+  const now = Date.now();
+  if (
+    !forceRefresh &&
+    store.newsArticles.length > 0 &&
+    store.newsExpiresAt > now &&
+    store.newsSyncedAt
+  ) {
+    return {
+      articles: store.newsArticles,
+      sources: store.newsSources,
+      syncedAt: store.newsSyncedAt,
+      cached: true,
+    };
+  }
+  if (inFlightNewsSync) return inFlightNewsSync;
+
+  inFlightNewsSync = (async () => {
+    const startedMs = Date.now();
+    const syncedAt = new Date().toISOString();
+
+    const settled = await Promise.all(
+      TOP_NEWS_SOURCES.map((src, idx) => fetchSingleNewsSource(src, syncedAt, idx))
+    );
+
+    const prevByPublisher = new Map<string, NewsArticleRecord[]>();
+    for (const art of store.newsArticles) {
+      const list = prevByPublisher.get(art.publisherId) || [];
+      list.push(art);
+      prevByPublisher.set(art.publisherId, list);
+    }
+
+    const combined: NewsArticleRecord[] = [];
+    const statuses: NewsSourceStatus[] = [];
+    let failedCount = 0;
+
+    for (const s of settled) {
+      statuses.push(s.status);
+      if (s.articles.length > 0) {
+        combined.push(...s.articles);
+      } else {
+        failedCount++;
+        const cachedForPub = (prevByPublisher.get(s.status.id) || []).map((a) => ({
+          ...a,
+          verificationStatus: 'Stale' as const,
+        }));
+        combined.push(...cachedForPub);
+      }
+    }
+
+    const deduplicated = deduplicateAndSortNews(combined);
+    store.newsArticles = deduplicated;
+    store.newsSources = statuses;
+    store.newsSyncedAt = syncedAt;
+    store.newsExpiresAt = Date.now() + CACHE_TTL_MS;
+
+    const newsRun: CollectionRunEntry = {
+      id: `run-news-${Date.now()}`,
+      startedAt: syncedAt,
+      completedAt: new Date().toISOString(),
+      scope: 'news',
+      itemsCollected: deduplicated.length,
+      duplicatesSkipped: Math.max(0, combined.length - deduplicated.length),
+      failedSources: failedCount,
+      durationMs: Date.now() - startedMs,
+      status: deduplicated.length === 0 ? 'failed' : failedCount > 0 ? 'partial' : 'success',
+    };
+    store.collectionRuns = [newsRun, ...store.collectionRuns].slice(0, 50);
+
+    savePersistedStore(store);
+
+    return {
+      articles: deduplicated,
+      sources: statuses,
+      syncedAt,
+      cached: false,
+    };
+  })();
+
+  try {
+    return await inFlightNewsSync;
+  } finally {
+    inFlightNewsSync = null;
+  }
+}
+
+// ---------- Ethiopian Capital Market (ESX / ECMA / Daily Share Sales) Collector ----------
+
+async function collectCapitalMarketActivity(
+  forceRefresh: boolean
+): Promise<CapitalMarketApiResponse> {
+  const now = Date.now();
+  if (!forceRefresh && store.capitalMarket && store.capitalMarketExpiresAt > now) {
+    return {
+      ...store.capitalMarket,
+      cached: true,
+    };
+  }
+  if (inFlightCapitalSync) return inFlightCapitalSync;
+
+  inFlightCapitalSync = (async () => {
+    const startedMs = Date.now();
+    const syncedAt = new Date().toISOString();
+
+    type WpPostLite = {
+      id: number | string;
+      date?: string;
+      link?: string;
+      title?: { rendered?: string };
+      excerpt?: { rendered?: string };
+    };
+
+    const [
+      esxListedRes,
+      stockMarketRes,
+      esxInterbankRes,
+      esxTBillsRes,
+      esxPostsRes,
+      smPostsRes,
+      ecmaRes,
+    ] = await Promise.all([
+      fetchTextImmediate('https://esx.et/equity-market/listed-companies/', {
+        headers: BROWSER_HEADERS,
+        timeoutMs: 12000,
+      }),
+      fetchTextImmediate('https://www.stockmarket.et/stock-market-data/', {
+        headers: BROWSER_HEADERS,
+        timeoutMs: 12000,
+      }),
+      fetchTextImmediate('https://esx.et/fixed-income-market/data/', {
+        headers: BROWSER_HEADERS,
+        timeoutMs: 12000,
+      }),
+      fetchTextImmediate('https://esx.et/fixed-income-market/listed-instruments/', {
+        headers: BROWSER_HEADERS,
+        timeoutMs: 12000,
+      }),
+      fetchJsonImmediate<WpPostLite[]>('https://esx.et/wp-json/wp/v2/posts?per_page=8', {
+        headers: { ...BROWSER_HEADERS, accept: 'application/json' },
+        timeoutMs: 10000,
+      }),
+      fetchJsonImmediate<WpPostLite[]>('https://www.stockmarket.et/wp-json/wp/v2/posts?per_page=6', {
+        headers: { ...BROWSER_HEADERS, accept: 'application/json' },
+        timeoutMs: 10000,
+      }),
+      fetchTextImmediate('https://ecma.gov.et/', {
+        headers: BROWSER_HEADERS,
+        timeoutMs: 9000,
+        retries: 0,
+      }),
+    ]);
+
+    let listedCompanies = [] as ReturnType<typeof parseEsxListedCompaniesHtml>;
+    let esxListedError: string | undefined;
+    if (esxListedRes.ok) {
+      listedCompanies = parseEsxListedCompaniesHtml(esxListedRes.text);
+    } else {
+      esxListedError = esxListedRes.error || 'Unable to reach esx.et';
+      recordError('cm-esx-listed', 'ESX Listed Companies', 'capital_market', esxListedError);
+    }
+
+    // Fetch individual ESX issuer profiles for Listed Shares & Listed Capital
+    const profilesBySymbol = new Map<string, EsxCompanyProfileStats>();
+    if (listedCompanies.length > 0) {
+      const profileResults = await Promise.all(
+        listedCompanies.map(async (c) => {
+          const r = await fetchTextImmediate(c.esxProfileUrl, {
+            headers: BROWSER_HEADERS,
+            timeoutMs: 8500,
+            retries: 0,
+          });
+          if (!r.ok) return null;
+          return parseEsxCompanyDirectoryProfile(r.text, c.esxProfileUrl);
+        })
+      );
+      for (const profile of profileResults) {
+        if (profile) {
+          profilesBySymbol.set(profile.symbol, profile);
+        }
+      }
+    }
+
+    let seriesBySymbol = new Map<string, StockMarketEtSeries>();
+    let smError: string | undefined;
+    if (stockMarketRes.ok) {
+      const parsedSeries = parseStockMarketEtHistoriesHtml(stockMarketRes.text);
+      seriesBySymbol = new Map(parsedSeries.map((s) => [s.symbol, s]));
+    } else {
+      smError = stockMarketRes.error || 'Unable to reach stockmarket.et';
+      recordError('cm-stockmarket-et', 'StockMarket.et ESX Feed', 'capital_market', smError);
+    }
+
+    let interbankTrades = [] as ReturnType<typeof parseEsxInterbankDataHtml>;
+    let fixedIncomeError: string | undefined;
+    if (esxInterbankRes.ok) {
+      interbankTrades = parseEsxInterbankDataHtml(esxInterbankRes.text);
+    } else {
+      fixedIncomeError = esxInterbankRes.error || 'Unable to reach esx.et fixed income';
+    }
+
+    let tBills = [] as ReturnType<typeof parseEsxListedTBillsHtml>;
+    if (esxTBillsRes.ok) {
+      tBills = parseEsxListedTBillsHtml(esxTBillsRes.text);
+    }
+
+    const announcements: CapitalMarketAnnouncement[] = [];
+    if (esxPostsRes.ok && Array.isArray(esxPostsRes.data)) {
+      announcements.push(
+        ...parseEsxAnnouncementsWpPosts(
+          esxPostsRes.data,
+          'Ethiopian Securities Exchange (ESX)',
+          'Official Release'
+        )
+      );
+    }
+    if (smPostsRes.ok && Array.isArray(smPostsRes.data)) {
+      announcements.push(
+        ...parseEsxAnnouncementsWpPosts(
+          smPostsRes.data,
+          'StockMarket.et',
+          'Market Commentary'
+        )
+      );
+    }
+    announcements.sort((a, b) => {
+      const ta = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+      const tb = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+      return tb - ta;
+    });
+
+    const ecmaOk = ecmaRes.ok;
+    const { equities, summary } = buildCapitalMarketEquitiesAndSummary({
+      listedCompanies,
+      profilesBySymbol,
+      seriesBySymbol,
+      interbankTrades,
+      syncedAt,
+    });
+
+    const sources: CapitalMarketSourceStatus[] = [
+      {
+        ...CAPITAL_MARKET_SOURCES_META[0],
+        status: listedCompanies.length > 0 ? 'Verified' : 'Collection failed',
+        recordsCollected: listedCompanies.length,
+        lastCheckedAt: syncedAt,
+        errorMessage: esxListedError,
+      },
+      {
+        ...CAPITAL_MARKET_SOURCES_META[1],
+        status: seriesBySymbol.size > 0 ? 'Verified' : 'Collection failed',
+        recordsCollected: seriesBySymbol.size,
+        lastCheckedAt: syncedAt,
+        errorMessage: smError,
+      },
+      {
+        ...CAPITAL_MARKET_SOURCES_META[2],
+        status:
+          interbankTrades.length > 0 || tBills.length > 0
+            ? 'Verified'
+            : fixedIncomeError
+            ? 'Collection failed'
+            : 'Stale',
+        recordsCollected: interbankTrades.length + tBills.length,
+        lastCheckedAt: syncedAt,
+        errorMessage: fixedIncomeError,
+      },
+      {
+        ...CAPITAL_MARKET_SOURCES_META[3],
+        status: ecmaOk ? 'Verified' : 'Source unavailable',
+        recordsCollected: ecmaOk ? 1 : 0,
+        lastCheckedAt: syncedAt,
+        errorMessage: ecmaOk
+          ? undefined
+          : 'ECMA WordPress REST API requires authorization; regulator home portal monitored.',
+      },
+    ];
+
+    const prev = store.capitalMarket;
+    const hasFreshData = equities.length > 0 || interbankTrades.length > 0 || tBills.length > 0;
+    const finalPayload: CapitalMarketApiResponse = hasFreshData
+      ? {
+          equities,
+          interbankTrades,
+          tBills,
+          announcements,
+          sources,
+          summary,
+          syncedAt,
+          cached: false,
+        }
+      : prev
+      ? {
+          ...prev,
+          sources,
+          syncedAt,
+          cached: false,
+        }
+      : {
+          equities: [],
+          interbankTrades: [],
+          tBills: [],
+          announcements,
+          sources,
+          summary,
+          syncedAt,
+          cached: false,
+        };
+
+    store.capitalMarket = finalPayload;
+    store.capitalMarketExpiresAt = Date.now() + CACHE_TTL_MS;
+
+    const failedSources = sources.filter((s) => s.status === 'Collection failed').length;
+    const cmRun: CollectionRunEntry = {
+      id: `run-cm-${Date.now()}`,
+      startedAt: syncedAt,
+      completedAt: new Date().toISOString(),
+      scope: 'capital_market',
+      itemsCollected:
+        finalPayload.equities.length +
+        finalPayload.interbankTrades.length +
+        finalPayload.tBills.length,
+      duplicatesSkipped: 0,
+      failedSources,
+      durationMs: Date.now() - startedMs,
+      status: !hasFreshData ? 'failed' : failedSources > 0 ? 'partial' : 'success',
+    };
+    store.collectionRuns = [cmRun, ...store.collectionRuns].slice(0, 50);
+
+    savePersistedStore(store);
+    return finalPayload;
+  })();
+
+  try {
+    return await inFlightCapitalSync;
+  } finally {
+    inFlightCapitalSync = null;
+  }
+}
+
 function buildOverviewResponse(): AggregatorOverviewResponse {
   const countsByModule: Record<string, number> = {};
   for (const opp of store.opportunities) {
@@ -986,15 +1586,27 @@ function buildOverviewResponse(): AggregatorOverviewResponse {
     jobSources: store.jobSources,
     fxBankStatuses: store.fxBankStatuses,
     opportunitySources: store.opportunitySources,
+    newsSources: store.newsSources,
+    capitalMarketSources: store.capitalMarket?.sources || [],
     collectionRuns: store.collectionRuns,
     collectionErrors: store.collectionErrors,
     countsByModule,
     totalCollectedListings:
-      store.jobs.length + store.opportunities.length + store.fxRates.length,
+      store.jobs.length +
+      store.opportunities.length +
+      store.fxRates.length +
+      store.newsArticles.length +
+      (store.capitalMarket?.equities.length || 0),
     duplicatesDetected: store.duplicatesDetected,
     expiredCount,
     anomaliesCount: store.anomaliesCount,
-    lastFullSyncAt: store.opportunitiesSyncedAt || store.fxSyncedAt || store.jobsSyncedAt,
+    lastFullSyncAt:
+      store.opportunitiesSyncedAt ||
+      store.newsSyncedAt ||
+      store.capitalMarket?.syncedAt ||
+      store.fxSyncedAt ||
+      store.jobsSyncedAt,
+    aiUsage: store.aiUsage,
   };
 }
 
@@ -1002,10 +1614,12 @@ export async function runFullBackgroundSync(forceRefresh: boolean = true): Promi
   if (isFullSyncRunning) return;
   isFullSyncRunning = true;
   try {
-    await Promise.all([
+    await Promise.allSettled([
       collectAllExternalJobs(forceRefresh),
       collectAllBankFx(forceRefresh),
       collectAllOpportunities(forceRefresh),
+      collectAllTopNews(forceRefresh),
+      collectCapitalMarketActivity(forceRefresh),
     ]);
   } finally {
     isFullSyncRunning = false;
@@ -1014,7 +1628,7 @@ export async function runFullBackgroundSync(forceRefresh: boolean = true): Promi
 
 export function createTatariApp(): express.Express {
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '8mb' }));
 
   app.get('/api/health', (_req, res) => {
     res.json({
@@ -1092,6 +1706,70 @@ export function createTatariApp(): express.Express {
     }
   });
 
+  app.get('/api/news', async (req, res) => {
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    const coverageFilter = typeof req.query.coverage === 'string' ? req.query.coverage : 'all';
+    const publisherFilter = typeof req.query.publisher === 'string' ? req.query.publisher : 'all';
+    try {
+      const payload = await collectAllTopNews(forceRefresh);
+      let articles = payload.articles;
+      if (coverageFilter !== 'all') {
+        articles = articles.filter((a) => a.coverage === coverageFilter);
+      }
+      if (publisherFilter !== 'all') {
+        articles = articles.filter((a) => a.publisherId === publisherFilter);
+      }
+      res.json({
+        ...payload,
+        articles,
+      });
+    } catch (err) {
+      res.status(500).json({
+        articles: [],
+        sources: store.newsSources,
+        syncedAt: new Date().toISOString(),
+        error: err instanceof Error ? err.message : 'Failed to collect top news headlines.',
+      });
+    }
+  });
+
+  app.get('/api/capital-market', async (req, res) => {
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    try {
+      const payload = await collectCapitalMarketActivity(forceRefresh);
+      res.json(payload);
+    } catch (err) {
+      res.status(500).json({
+        equities: [],
+        interbankTrades: [],
+        tBills: [],
+        announcements: [],
+        sources: [],
+        summary: {
+          listedCompaniesCount: 0,
+          pricedEquitiesCount: 0,
+          totalListedShares: 0,
+          totalImpliedMarketCapEtb: 0,
+          latestSessionDate: null,
+          advancersCount: 0,
+          declinersCount: 0,
+          unchangedCount: 0,
+          topGainerSymbol: null,
+          topGainerPct: null,
+          latestInterbankVolumeEtb: null,
+          latestInterbankTradesCount: null,
+          latestInterbankWeek: null,
+          marketSessionState: 'Feed unavailable',
+        },
+        syncedAt: new Date().toISOString(),
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Failed to collect Ethiopian Capital Market data.',
+      });
+    }
+  });
+
   const requireAdminBearer: express.RequestHandler = (req, res, next) => {
     const token = extractBearerToken(req.headers.authorization);
     const verified = verifyAdminSessionToken(token, SESSION_SIGNING_SECRET);
@@ -1148,6 +1826,10 @@ export function createTatariApp(): express.Express {
         await collectAllBankFx(true);
       } else if (scope === 'opportunities') {
         await collectAllOpportunities(true);
+      } else if (scope === 'news') {
+        await collectAllTopNews(true);
+      } else if (scope === 'capital_market') {
+        await collectCapitalMarketActivity(true);
       } else if (scope === 'single' && sourceId) {
         const target = store.opportunitySources.find((s) => s.id === sourceId);
         if (!target) {
@@ -1358,6 +2040,383 @@ export function createTatariApp(): express.Express {
     store.anomaliesCount = store.fxRates.filter((r) => r.anomalyFlagged).length;
     savePersistedStore(store);
     res.json({ ok: true, rate: updated });
+  });
+
+  // ---------- AI Recruitment Suite & Secure Document Parsing Routes ----------
+
+  const aiRateWindow = new Map<string, number[]>();
+  const AI_RATE_LIMIT = 40;
+  const AI_RATE_WINDOW_MS = 10 * 60 * 1000;
+
+  function enforceAiRateLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
+    const ip =
+      String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'local')
+        .split(',')[0]
+        .trim() || 'local';
+    const now = Date.now();
+    const recent = (aiRateWindow.get(ip) || []).filter((ts) => now - ts < AI_RATE_WINDOW_MS);
+    if (recent.length >= AI_RATE_LIMIT) {
+      res.status(429).json({
+        error: 'AI request rate limit exceeded. Please wait a few minutes before retrying.',
+      });
+      return;
+    }
+    recent.push(now);
+    aiRateWindow.set(ip, recent);
+    next();
+  }
+
+  function trackAiUsage(
+    metric: 'resumeScans' | 'jobMatches' | 'recommendationsRuns' | 'interviewSessions' | 'employerScreenings'
+  ) {
+    store.aiUsage[metric] = (store.aiUsage[metric] || 0) + 1;
+    store.aiUsage.totalAiRequests = (store.aiUsage.totalAiRequests || 0) + 1;
+    store.aiUsage.lastAiCallAt = new Date().toISOString();
+    savePersistedStore(store);
+  }
+
+  async function callOpenAiJson<T>(systemPrompt: string, userPayload: unknown): Promise<T | null> {
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!apiKey) return null;
+    const model = process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.25,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: JSON.stringify(userPayload) },
+          ],
+        }),
+        signal: AbortSignal.timeout(25000),
+      });
+      if (!response.ok) return null;
+      const payload = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const content = payload.choices?.[0]?.message?.content;
+      if (!content) return null;
+      return JSON.parse(content) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  app.get('/api/ai/status', (_req, res) => {
+    const openAiConfigured = Boolean(process.env.OPENAI_API_KEY?.trim());
+    const payload: AiEngineStatusResponse = {
+      openAiConfigured,
+      model: openAiConfigured
+        ? process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini'
+        : 'TATARI Evidence NLP Engine',
+      engineMode: openAiConfigured ? 'openai' : 'deterministic',
+      usage: store.aiUsage,
+    };
+    res.json(payload);
+  });
+
+  app.post('/api/ai/parse-cv', enforceAiRateLimit, async (req, res) => {
+    try {
+      const fileName = String(req.body?.fileName || '').trim();
+      const base64Data = String(req.body?.base64Data || '').trim();
+      if (!fileName || !base64Data) {
+        res.status(400).json({ error: 'fileName and base64Data are required.' });
+        return;
+      }
+
+      const rawBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+      const buffer = Buffer.from(rawBase64, 'base64');
+      const check = validateUploadedCvBinary(fileName, buffer.length, new Uint8Array(buffer));
+      if (!check.valid || !check.fileType) {
+        res.status(400).json({ error: check.error || 'Unsupported file format.' });
+        return;
+      }
+
+      let extractedText = '';
+      if (check.fileType === 'txt') {
+        extractedText = sanitizeResumePlainText(buffer.toString('utf8'));
+      } else if (check.fileType === 'docx') {
+        const mammoth = await import('mammoth');
+        const mod = mammoth.default || mammoth;
+        const result = await mod.extractRawText({ buffer });
+        extractedText = sanitizeResumePlainText(result.value || '');
+      } else {
+        const { extractText } = await import('unpdf');
+        const result = await extractText(new Uint8Array(buffer), { mergePages: true });
+        const joined = Array.isArray(result.text) ? result.text.join('\n') : String(result.text || '');
+        extractedText = sanitizeResumePlainText(joined);
+      }
+
+      if (!extractedText || extractedText.length < 15) {
+        res.status(422).json({
+          error:
+            'No readable text could be extracted from this file. Scanned image-only PDFs require OCR or pasting text.',
+        });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        fileName: fileName.replace(/[^a-zA-Z0-9._-]/g, '_'),
+        fileType: check.fileType,
+        fileSizeBytes: buffer.length,
+        extractedText: extractedText.slice(0, 35000),
+        wordCount: extractedText.split(/\s+/).filter(Boolean).length,
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to parse resume document.',
+      });
+    }
+  });
+
+  app.post('/api/ai/analyze-resume', enforceAiRateLimit, async (req, res) => {
+    const cvText = sanitizeResumePlainText(String(req.body?.cvText || '')).slice(0, 28000);
+    const targetRole = String(req.body?.targetRole || '').trim().slice(0, 140);
+    if (cvText.length < 25) {
+      res.status(400).json({ error: 'Please provide at least 25 characters of resume text or upload a CV file.' });
+      return;
+    }
+
+    const baseline = computeDeterministicResumeAnalysis(cvText, targetRole);
+    const openAiOutput = await callOpenAiJson<Partial<AiResumeAnalysisResult>>(
+      `You are an ethical, evidence-based career coach. Analyze ONLY the supplied resume text. Never invent degrees, employers, dates, or skills not present in the source CV. Return strict JSON with keys: overallScore (0-100), sectionScores ({structure,clarity,experience,education,skills} each 0-100), extractedSkills (string[]), strengths (string[]), weaknesses (string[]), missingInfo (string[]), missingKeywords (string[]), suggestions (string[]), improvedResumeText (string rewritten cleanly using ONLY truthful facts from the source CV).`,
+      { cvText, targetRole }
+    );
+
+    trackAiUsage('resumeScans');
+
+    if (openAiOutput && typeof openAiOutput.overallScore === 'number') {
+      res.json({
+        ...baseline,
+        ...openAiOutput,
+        engine: 'openai',
+        modelLabel: `OpenAI (${process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini'})`,
+        analyzedAt: new Date().toISOString(),
+      } satisfies AiResumeAnalysisResult);
+      return;
+    }
+
+    res.json(baseline);
+  });
+
+  app.post('/api/ai/match-job', enforceAiRateLimit, async (req, res) => {
+    const cvText = sanitizeResumePlainText(String(req.body?.cvText || '')).slice(0, 28000);
+    const job = req.body?.job as JobListing | undefined;
+    if (cvText.length < 25 || !job || !job.titleEn) {
+      res.status(400).json({ error: 'Resume text and target job description are required.' });
+      return;
+    }
+
+    const baseline = computeDeterministicJobMatch(cvText, job);
+    const openAiOutput = await callOpenAiJson<Partial<AiJobMatchResult>>(
+      `You are an evidence-based ATS matcher. Compare the candidate's CV against the job description. Never fabricate qualifications or experience. Return strict JSON with keys: compatibilityScore (0-100), matchingSkills (string[]), missingSkills (string[]), relevantExperience (string[] quoting real CV evidence), explanation (string), suggestions (string[]), tailoredResumeText (string reorganizing ONLY facts from the source CV to emphasize role alignment).`,
+      {
+        cvText,
+        job: {
+          title: job.titleEn,
+          company: job.companyName,
+          category: job.category,
+          experienceLevel: job.experienceLevel,
+          description: job.descriptionEn,
+          requirements: job.requirements,
+          skills: job.skills || [],
+        },
+      }
+    );
+
+    trackAiUsage('jobMatches');
+
+    if (openAiOutput && typeof openAiOutput.compatibilityScore === 'number') {
+      res.json({
+        ...baseline,
+        ...openAiOutput,
+        engine: 'openai',
+        modelLabel: `OpenAI (${process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini'})`,
+        matchedAt: new Date().toISOString(),
+      } satisfies AiJobMatchResult);
+      return;
+    }
+
+    res.json(baseline);
+  });
+
+  app.post('/api/ai/recommendations', enforceAiRateLimit, (req, res) => {
+    const profile = req.body?.profile as UserProfile | null;
+    const jobs = Array.isArray(req.body?.jobs) ? (req.body.jobs as JobListing[]) : [];
+    if (!profile || jobs.length === 0) {
+      res.json({ recommendations: [] });
+      return;
+    }
+    const recommendations = rankJobsForCandidate(profile, jobs, 15);
+    trackAiUsage('recommendationsRuns');
+    res.json({ recommendations });
+  });
+
+  app.post('/api/ai/interview/questions', enforceAiRateLimit, async (req, res) => {
+    const jobTitle = String(req.body?.jobTitle || '').trim();
+    const jobDescription = String(req.body?.jobDescription || '').trim();
+    const requirements = Array.isArray(req.body?.requirements)
+      ? req.body.requirements.map(String)
+      : [];
+
+    if (!jobTitle) {
+      res.status(400).json({ error: 'Job title is required to generate interview questions.' });
+      return;
+    }
+
+    const baseline = buildDeterministicInterviewQuestions(jobTitle, jobDescription, requirements);
+    const openAiOutput = await callOpenAiJson<{ questions?: AiInterviewQuestion[] }>(
+      `You are an expert technical & HR interviewer. Generate 5 realistic interview questions tailored to the supplied job description. Return strict JSON: {"questions":[{"id":"iq-1","category":"Role-Specific"|"Technical"|"Behavioral"|"Situational","question":"...","focusTip":"..."}]}.`,
+      { jobTitle, jobDescription, requirements }
+    );
+
+    if (openAiOutput?.questions && Array.isArray(openAiOutput.questions) && openAiOutput.questions.length > 0) {
+      res.json({ engine: 'openai', questions: openAiOutput.questions.slice(0, 6) });
+      return;
+    }
+
+    res.json({ engine: 'deterministic', questions: baseline });
+  });
+
+  app.post('/api/ai/interview/evaluate', enforceAiRateLimit, async (req, res) => {
+    const question = req.body?.question as AiInterviewQuestion | undefined;
+    const answer = String(req.body?.answer || '').trim();
+    const jobTitle = String(req.body?.jobTitle || 'Target Role').trim();
+    const requirements = Array.isArray(req.body?.requirements)
+      ? req.body.requirements.map(String)
+      : [];
+
+    if (!question?.question || answer.length < 5) {
+      res.status(400).json({ error: 'Please provide an answer before requesting evaluation.' });
+      return;
+    }
+
+    const baseline = evaluateInterviewAnswerDeterministic(question, answer, jobTitle, requirements);
+    const openAiOutput = await callOpenAiJson<Partial<AiInterviewEvaluation>>(
+      `Evaluate the candidate's interview answer objectively on communication, relevance, clarity, and technicalKnowledge (each 0-100). Return strict JSON with keys: overallScore, scores ({communication,relevance,clarity,technicalKnowledge}), strengths (string[]), improvements (string[]), suggestedStrongerAnswer (string), feedbackSummary (string).`,
+      { jobTitle, question: question.question, answer, requirements }
+    );
+
+    trackAiUsage('interviewSessions');
+
+    if (openAiOutput && typeof openAiOutput.overallScore === 'number') {
+      res.json({
+        ...baseline,
+        ...openAiOutput,
+        engine: 'openai',
+      } satisfies AiInterviewEvaluation);
+      return;
+    }
+
+    res.json(baseline);
+  });
+
+  app.post('/api/ai/employer/screen', enforceAiRateLimit, async (req, res) => {
+    const job = req.body?.job as JobListing | undefined;
+    const applications = Array.isArray(req.body?.applications)
+      ? (req.body.applications as JobApplication[])
+      : [];
+    if (!job || !job.id) {
+      res.status(400).json({ error: 'Target job listing is required.' });
+      return;
+    }
+
+    const baseline = screenApplicantsDeterministic(job, applications);
+    const openAiOutput = await callOpenAiJson<{
+      screenings?: AiApplicantScreeningItem[];
+      comparisonSummary?: string;
+    }>(
+      `You are an ethical HR recruitment assistant. Summarize and score applicants ONLY by job-relevant skills, stated experience, and submitted CV/cover note evidence. Strictly avoid protected characteristics (age, gender, ethnicity, religion, marital status). Never make final automated hiring decisions. Return strict JSON: {"screenings":[{"applicationId","applicantName","applicantEmail","jobId","jobTitle","fitScore","category":"Strong Fit"|"Potential Fit"|"Needs Review","summary","matchingSkills":[],"missingQualifications":[],"biasCheckNote"}],"comparisonSummary":"..."}.`,
+      {
+        job: {
+          id: job.id,
+          titleEn: job.titleEn,
+          requirements: job.requirements,
+          descriptionEn: job.descriptionEn,
+        },
+        applicants: applications
+          .filter((a) => a.jobId === job.id)
+          .map((a) => ({
+            applicationId: a.id,
+            applicantName: a.applicantName,
+            applicantEmail: a.applicantEmail,
+            yearsExperience: a.yearsExperience,
+            coverNote: a.coverNote,
+            resumeText: (a.resumeText || '').slice(0, 3500),
+            status: a.status,
+          })),
+      }
+    );
+
+    trackAiUsage('employerScreenings');
+
+    if (openAiOutput?.screenings && Array.isArray(openAiOutput.screenings) && openAiOutput.screenings.length > 0) {
+      res.json({
+        engine: 'openai',
+        screenings: openAiOutput.screenings,
+        comparisonSummary:
+          openAiOutput.comparisonSummary ||
+          `Screened ${openAiOutput.screenings.length} applicant(s) for ${job.titleEn}.`,
+      });
+      return;
+    }
+
+    const strongCount = baseline.filter((b) => b.category === 'Strong Fit').length;
+    res.json({
+      engine: 'deterministic',
+      screenings: baseline,
+      comparisonSummary:
+        baseline.length === 0
+          ? `No applicants have applied to ${job.titleEn} yet.`
+          : `Screened ${baseline.length} applicant(s) for ${job.titleEn}: ${strongCount} Strong Fit. Highest fit: ${baseline[0].applicantName} (${baseline[0].fitScore}/100).`,
+    });
+  });
+
+  app.post('/api/ai/employer/ask', enforceAiRateLimit, async (req, res) => {
+    const question = String(req.body?.question || '').trim();
+    const job = (req.body?.job as JobListing | null) || null;
+    const applications = Array.isArray(req.body?.applications)
+      ? (req.body.applications as JobApplication[])
+      : [];
+    if (!question) {
+      res.status(400).json({ error: 'Question is required.' });
+      return;
+    }
+
+    const openAiOutput = await callOpenAiJson<{ answer?: string }>(
+      `Answer the recruiter's question strictly using evidence from the provided applicants and job description. Do not invent facts or reference protected characteristics. Return JSON: {"answer":"..."}.`,
+      {
+        question,
+        job: job ? { title: job.titleEn, requirements: job.requirements } : null,
+        applicants: applications.slice(0, 25).map((a) => ({
+          name: a.applicantName,
+          jobTitle: a.jobTitle,
+          yearsExperience: a.yearsExperience,
+          status: a.status,
+          coverNote: a.coverNote,
+          resumeExcerpt: (a.resumeText || '').slice(0, 1200),
+        })),
+      }
+    );
+
+    if (openAiOutput?.answer) {
+      res.json({ engine: 'openai', answer: openAiOutput.answer });
+      return;
+    }
+
+    res.json({
+      engine: 'deterministic',
+      answer: answerRecruiterPoolQuestion(question, job, applications),
+    });
   });
 
   return app;

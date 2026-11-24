@@ -13,15 +13,19 @@ import { getSupabaseClient } from './supabaseClient';
 import type {
   AuditLogEntry,
   DigitalProduct,
+  JobAlertConfig,
   JobApplication,
   JobListing,
   Language,
   MaterialOrder,
   PaymentReceipt,
+  PlatformNotification,
   ProductReview,
+  ReportedListingEntry,
   TrainingProgram,
   TrainingRequest,
   UserProfile,
+  AiInterviewSession,
 } from '../types/domain';
 
 const STORAGE_KEY = 'tatari_platform_state_v13';
@@ -41,6 +45,10 @@ export interface PlatformState {
   reviews: ProductReview[];
   trainingPrograms: TrainingProgram[];
   trainingRequests: TrainingRequest[];
+  jobAlerts: JobAlertConfig[];
+  notifications: PlatformNotification[];
+  interviewSessions: AiInterviewSession[];
+  reportedListings: ReportedListingEntry[];
   logs: AuditLogEntry[];
 }
 
@@ -58,9 +66,17 @@ export function getInitialPlatformState(): PlatformState {
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<PlatformState>;
       const users = (parsed.users?.length ? parsed.users : SEED_USERS).map((u) => {
-        if (u.passwordHash) return u;
         const seeded = SEED_USERS.find((s) => s.email.toLowerCase() === u.email.toLowerCase());
-        return seeded ? { ...u, passwordHash: seeded.passwordHash } : u;
+        if (!seeded) return u;
+        return {
+          ...seeded,
+          ...u,
+          passwordHash: u.passwordHash || seeded.passwordHash,
+          skills: u.skills?.length ? u.skills : seeded.skills,
+          resumes: u.resumes?.length ? u.resumes : seeded.resumes,
+          experience: u.experience?.length ? u.experience : seeded.experience,
+          education: u.education?.length ? u.education : seeded.education,
+        };
       });
       const products = normalizeProductImages(
         parsed.products?.length ? parsed.products : SEED_PRODUCTS
@@ -89,6 +105,10 @@ export function getInitialPlatformState(): PlatformState {
         trainingRequests: Array.isArray(parsed.trainingRequests)
           ? parsed.trainingRequests
           : SEED_TRAINING_REQUESTS,
+        jobAlerts: Array.isArray(parsed.jobAlerts) ? parsed.jobAlerts : [],
+        notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+        interviewSessions: Array.isArray(parsed.interviewSessions) ? parsed.interviewSessions : [],
+        reportedListings: Array.isArray(parsed.reportedListings) ? parsed.reportedListings : [],
         logs: Array.isArray(parsed.logs) ? parsed.logs : SEED_LOGS,
       };
     }
@@ -110,6 +130,10 @@ export function getInitialPlatformState(): PlatformState {
     reviews: [],
     trainingPrograms: SEED_TRAINING_PROGRAMS,
     trainingRequests: SEED_TRAINING_REQUESTS,
+    jobAlerts: [],
+    notifications: [],
+    interviewSessions: [],
+    reportedListings: [],
     logs: SEED_LOGS,
   };
 }

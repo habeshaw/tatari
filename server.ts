@@ -32,10 +32,14 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`TATARI server running on http://0.0.0.0:${PORT}`);
     setTimeout(() => {
-      void runFullBackgroundSync(false);
+      runFullBackgroundSync(false).catch((err) => {
+        console.error('Initial background sync error:', err);
+      });
     }, 1000);
     setInterval(() => {
-      void runFullBackgroundSync(true);
+      runFullBackgroundSync(true).catch((err) => {
+        console.error('Periodic background sync error:', err);
+      });
     }, BACKGROUND_SYNC_INTERVAL_MS);
   });
 }

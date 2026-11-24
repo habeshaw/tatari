@@ -152,8 +152,10 @@ export function filterJobs(
         job.titleAm ?? '',
         job.companyName,
         job.category,
+        job.industry ?? '',
         job.summaryEn,
         job.descriptionEn,
+        ...(job.skills || []),
         ...job.requirements,
       ]
         .join(' ')

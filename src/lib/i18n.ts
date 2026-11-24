@@ -3,7 +3,10 @@ import type { Language } from '../types/domain';
 export const TRANSLATIONS: Record<
   Language,
   {
+    navNews: string;
+    navCapitalMarket: string;
     navJobs: string;
+    navAiStudio: string;
     navFx: string;
     navOpportunities: string;
     navTraining: string;
@@ -38,7 +41,10 @@ export const TRANSLATIONS: Record<
   }
 > = {
   en: {
+    navNews: 'Top News',
+    navCapitalMarket: 'Capital Market',
     navJobs: 'Jobs',
+    navAiStudio: 'AI Career',
     navFx: 'Bank FX',
     navOpportunities: 'Opportunities',
     navTraining: 'Training',
@@ -75,7 +81,10 @@ export const TRANSLATIONS: Record<
     helpButton: 'Help',
   },
   am: {
+    navNews: 'ዜና',
+    navCapitalMarket: 'ካፒታል ገበያ',
     navJobs: 'ሥራዎች',
+    navAiStudio: 'AI ሙያ',
     navFx: 'የባንክ ምንዛሬ',
     navOpportunities: 'ዕድሎች እና ጨረታ',
     navTraining: 'ስልጠና',

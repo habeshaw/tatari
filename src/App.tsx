@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { AdminConsoleView } from './components/AdminConsoleView';
+import { AiCareerStudioView } from './components/AiCareerStudioView';
 import { BankFxDashboardView } from './components/BankFxDashboardView';
 import { DigitalStoreView } from './components/DigitalStoreView';
 import { EmployerHubView } from './components/EmployerHubView';
@@ -19,7 +20,10 @@ import {
 } from './components/Modals';
 import { MyActivityView } from './components/MyActivityView';
 import { OpportunitiesHubView } from './components/OpportunitiesHubView';
+import { TopNewsView } from './components/TopNewsView';
+import { CapitalMarketView } from './components/CapitalMarketView';
 import { TrainingServicesView } from './components/TrainingServicesView';
+import { findMatchingJobsForAlert } from './lib/aiRecruitment';
 import {
   deleteJobFromSupabase,
   deleteProductFromSupabase,
@@ -85,18 +89,25 @@ import type {
   AccountStatus,
   AggregatedOpportunity,
   AggregatorOverviewResponse,
+  AiInterviewSession,
   ApplicationStage,
   AppView,
   BankFxApiResponse,
+  CandidateResumeFile,
+  CapitalMarketApiResponse,
   DigitalProduct,
   ExternalJobSourceStatus,
+  JobAlertConfig,
   JobListing,
   JobModerationStatus,
   Language,
   MaterialOrder,
+  NewsApiResponse,
   OpportunitiesApiResponse,
   OpportunityModuleType,
   PaymentReceipt,
+  PlatformNotification,
+  ReportedListingEntry,
   TrainingProposalStatus,
   TrainingRequest,
   UserRole,
@@ -140,14 +151,24 @@ export default function App() {
   const [oppData, setOppData] = useState<OpportunitiesApiResponse | null>(null);
   const [isSyncingOpp, setIsSyncingOpp] = useState(false);
   const [oppError, setOppError] = useState<string | null>(null);
+  const [newsData, setNewsData] = useState<NewsApiResponse | null>(null);
+  const [isSyncingNews, setIsSyncingNews] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
+  const [capitalMarketData, setCapitalMarketData] = useState<CapitalMarketApiResponse | null>(null);
+  const [isSyncingCapital, setIsSyncingCapital] = useState(false);
+  const [capitalError, setCapitalError] = useState<string | null>(null);
   const [aggregatorOverview, setAggregatorOverview] = useState<AggregatorOverviewResponse | null>(
     null
   );
   const [adminBearerToken, setAdminBearerToken] = useState<string | null>(null);
   const [isSyncingAggregator, setIsSyncingAggregator] = useState(false);
   const [adminRequestedTab, setAdminRequestedTab] = useState<
-    'payments' | 'jobs' | 'store' | 'training' | 'sources' | 'users' | undefined
+    'payments' | 'jobs' | 'store' | 'training' | 'sources' | 'users' | 'analytics' | undefined
   >(undefined);
+  const [activityRequestedTab, setActivityRequestedTab] = useState<
+    'orders' | 'applications' | 'saved' | 'training' | 'profile' | 'alerts' | undefined
+  >(undefined);
+  const [aiPreselectedJobId, setAiPreselectedJobId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
 
   const showToast = (message: string, isError: boolean = false) => {
@@ -192,8 +213,15 @@ export default function App() {
       setLastExternalSyncAt(data.syncedAt || new Date().toISOString());
 
       setState((prev) => {
+        const prevIds = new Set(prev.jobs.map((j) => j.id));
         const nextJobs =
           incomingJobs.length > 0 ? mergeExternalJobs(prev.jobs, incomingJobs) : prev.jobs;
+        const newlyAdded = nextJobs.filter((j) => !prevIds.has(j.id) && j.status === 'approved');
+        const generatedAlerts = buildJobAlertNotifications(
+          prev.jobAlerts || [],
+          newlyAdded,
+          prev.notifications || []
+        );
         const syncLog =
           forceRefresh && prev.currentUserEmail
             ? [
@@ -212,6 +240,10 @@ export default function App() {
         return {
           ...prev,
           jobs: nextJobs,
+          notifications:
+            generatedAlerts.length > 0
+              ? [...generatedAlerts, ...(prev.notifications || [])]
+              : prev.notifications,
           logs: syncLog,
         };
       });
@@ -350,6 +382,92 @@ export default function App() {
     }
   };
 
+  const fetchTopNews = async (forceRefresh: boolean = false, notifyUser: boolean = false) => {
+    setIsSyncingNews(true);
+    setNewsError(null);
+    try {
+      const response = await fetch(`/api/news${forceRefresh ? '?refresh=1' : ''}`);
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok) {
+        throw new Error(`News sync returned HTTP ${response.status}.`);
+      }
+      if (!contentType.includes('application/json')) {
+        throw new Error(
+          'Top News API returned HTML instead of JSON. Ensure backend /api routes are active.'
+        );
+      }
+      const data = (await response.json()) as NewsApiResponse;
+      setNewsData(data);
+      const liveCount = (data.sources || []).filter((s) => s.status === 'Verified').length;
+      if (data.articles.length === 0) {
+        setNewsError('News publishers returned 0 live headlines during the last sync.');
+      }
+      if (notifyUser) {
+        showToast(
+          data.articles.length > 0
+            ? `Collected ${data.articles.length} live headlines across ${liveCount} news outlets.`
+            : 'No news headlines returned right now.',
+          data.articles.length === 0
+        );
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Could not reach live news publisher feeds right now.';
+      setNewsError(msg);
+      if (notifyUser) {
+        showToast(msg, true);
+      }
+    } finally {
+      setIsSyncingNews(false);
+    }
+  };
+
+  const fetchCapitalMarket = async (
+    forceRefresh: boolean = false,
+    notifyUser: boolean = false
+  ) => {
+    setIsSyncingCapital(true);
+    setCapitalError(null);
+    try {
+      const response = await fetch(`/api/capital-market${forceRefresh ? '?refresh=1' : ''}`);
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok) {
+        throw new Error(`Capital Market sync returned HTTP ${response.status}.`);
+      }
+      if (!contentType.includes('application/json')) {
+        throw new Error(
+          'Capital Market API returned HTML instead of JSON. Ensure backend /api routes are active.'
+        );
+      }
+      const data = (await response.json()) as CapitalMarketApiResponse;
+      setCapitalMarketData(data);
+      if (data.equities.length === 0 && data.interbankTrades.length === 0) {
+        setCapitalError('ESX / Capital Market feeds returned 0 records during the last sync.');
+      }
+      if (notifyUser) {
+        showToast(
+          data.equities.length > 0
+            ? `Synced ${data.equities.length} ESX listed share securities & fixed-income records.`
+            : 'No ESX securities returned right now.',
+          data.equities.length === 0
+        );
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Could not reach Ethiopian Capital Market (ESX) feeds right now.';
+      setCapitalError(msg);
+      if (notifyUser) {
+        showToast(msg, true);
+      }
+    } finally {
+      setIsSyncingCapital(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
     syncWithSupabaseIfAvailable().then((res) => {
@@ -367,6 +485,8 @@ export default function App() {
     void syncExternalJobs(false, false);
     void fetchFxRates(false, false);
     void fetchOpportunities(false, false);
+    void fetchTopNews(false, false);
+    void fetchCapitalMarket(false, false);
     return () => {
       active = false;
     };
@@ -398,6 +518,48 @@ export default function App() {
   const pendingApprovalCount = isAdmin
     ? state.receipts.filter((r) => r.status === 'pending_verification').length
     : 0;
+
+  const unreadNotificationCount = currentUser
+    ? (state.notifications || []).filter(
+        (n) => n.recipientEmail.toLowerCase() === currentUser.email.toLowerCase() && !n.read
+      ).length
+    : 0;
+
+  const buildJobAlertNotifications = (
+    alerts: JobAlertConfig[],
+    candidateJobs: JobListing[],
+    existingNotifs: PlatformNotification[]
+  ): PlatformNotification[] => {
+    if (alerts.length === 0 || candidateJobs.length === 0) return [];
+    const created: PlatformNotification[] = [];
+    const existingKeys = new Set(
+      existingNotifs.map((n) => `${n.recipientEmail.toLowerCase()}::${n.title}`)
+    );
+    const nowIso = new Date().toISOString();
+    for (const alert of alerts) {
+      if (!alert.active || !alert.inAppEnabled) continue;
+      const matches = findMatchingJobsForAlert(alert, candidateJobs);
+      for (const job of matches.slice(0, 3)) {
+        const title = `Job Alert Match: ${job.titleEn}`;
+        const key = `${alert.email.toLowerCase()}::${title}`;
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+        created.push({
+          id: `notif-alert-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          recipientEmail: alert.email,
+          title,
+          message: `${job.companyName} in ${job.location} matches your alert "${
+            alert.keywords || alert.category || 'All roles'
+          }"${alert.emailEnabled ? ' (Email & In-App enabled)' : ''}.`,
+          type: 'job_alert',
+          linkView: 'jobs',
+          read: false,
+          createdAt: nowIso,
+        });
+      }
+    }
+    return created;
+  };
 
   const lockoutSecondsRemaining = Math.max(0, Math.ceil((lockoutUntilMs - nowMs) / 1000));
 
@@ -478,6 +640,9 @@ export default function App() {
     applicantEmail: string;
     phone: string;
     resumeUrl: string;
+    resumeId?: string;
+    resumeFileName?: string;
+    resumeText?: string;
     yearsExperience: string;
     coverNote: string;
     password?: string;
@@ -736,13 +901,23 @@ export default function App() {
     );
     if (nextOrder) void pushOrderToSupabase(nextOrder);
 
-    setState((prev) => ({
-      ...prev,
-      jobs: updated.jobs,
-      orders: updated.orders,
-      receipts: updated.receipts,
-      logs: [logEntry, ...prev.logs],
-    }));
+    setState((prev) => {
+      const alertNotifs =
+        nextJob && nextJob.status === 'approved'
+          ? buildJobAlertNotifications(prev.jobAlerts || [], [nextJob], prev.notifications || [])
+          : [];
+      return {
+        ...prev,
+        jobs: updated.jobs,
+        orders: updated.orders,
+        receipts: updated.receipts,
+        notifications:
+          alertNotifs.length > 0
+            ? [...alertNotifs, ...(prev.notifications || [])]
+            : prev.notifications,
+        logs: [logEntry, ...prev.logs],
+      };
+    });
     showToast(
       rcpt.targetType === 'job_post'
         ? `Payment ${rcpt.transactionRef} approved — job is now live on the Job Board.`
@@ -801,16 +976,56 @@ export default function App() {
       return;
     }
     const existing = state.applications.find((a) => a.id === appId);
+    const nowIso = new Date().toISOString();
     if (existing) {
-      void pushApplicationToSupabase({ ...existing, status: stage });
+      void pushApplicationToSupabase({ ...existing, status: stage, updatedAt: nowIso });
+    }
+    setState((prev) => {
+      const notif: PlatformNotification | null = existing
+        ? {
+            id: `notif-stage-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            recipientEmail: existing.applicantEmail,
+            title: `Application Update: ${existing.jobTitle}`,
+            message: `${existing.companyName} updated your application status to "${stage}".`,
+            type: 'application_update',
+            linkView: 'activity',
+            read: false,
+            createdAt: nowIso,
+          }
+        : null;
+      return {
+        ...prev,
+        applications: prev.applications.map((a) =>
+          a.id === appId ? { ...a, status: stage, updatedAt: nowIso } : a
+        ),
+        notifications: notif ? [notif, ...(prev.notifications || [])] : prev.notifications,
+      };
+    });
+    showToast(`Candidate stage updated to ${stage}.`);
+  };
+
+  const handleUpdateApplicationDetails = (
+    appId: string,
+    patch: { humanDecisionOverride?: string; aiMatchScore?: number; aiMatchSummary?: string }
+  ) => {
+    if (!canAccessActivity(currentUser, 'employer_hub').allowed) {
+      showToast('Verified Employer access required.', true);
+      return;
+    }
+    const existing = state.applications.find((a) => a.id === appId);
+    const nowIso = new Date().toISOString();
+    if (existing) {
+      void pushApplicationToSupabase({ ...existing, ...patch, updatedAt: nowIso });
     }
     setState((prev) => ({
       ...prev,
       applications: prev.applications.map((a) =>
-        a.id === appId ? { ...a, status: stage } : a
+        a.id === appId ? { ...a, ...patch, updatedAt: nowIso } : a
       ),
     }));
-    showToast(`Candidate stage updated to ${stage}.`);
+    if (patch.humanDecisionOverride !== undefined) {
+      showToast('Recruiter review note saved.');
+    }
   };
 
   const handleEmployerToggleJobPause = (jobId: string) => {
@@ -851,25 +1066,30 @@ export default function App() {
       return;
     }
     const existing = state.jobs.find((j) => j.id === jobId);
-    if (existing) {
-      void pushJobToSupabase({
-        ...existing,
-        status,
-        publishedAt: status === 'approved' ? new Date().toISOString() : existing.publishedAt,
-      });
+    const updatedJob = existing
+      ? {
+          ...existing,
+          status,
+          publishedAt: status === 'approved' ? new Date().toISOString() : existing.publishedAt,
+        }
+      : null;
+    if (updatedJob) {
+      void pushJobToSupabase(updatedJob);
     }
-    setState((prev) => ({
-      ...prev,
-      jobs: prev.jobs.map((j) =>
-        j.id === jobId
-          ? {
-              ...j,
-              status,
-              publishedAt: status === 'approved' ? new Date().toISOString() : j.publishedAt,
-            }
-          : j
-      ),
-    }));
+    setState((prev) => {
+      const alertNotifs =
+        updatedJob && status === 'approved'
+          ? buildJobAlertNotifications(prev.jobAlerts || [], [updatedJob], prev.notifications || [])
+          : [];
+      return {
+        ...prev,
+        jobs: prev.jobs.map((j) => (j.id === jobId && updatedJob ? updatedJob : j)),
+        notifications:
+          alertNotifs.length > 0
+            ? [...alertNotifs, ...(prev.notifications || [])]
+            : prev.notifications,
+      };
+    });
     showToast(`Job status updated to ${status}.`);
   };
 
@@ -1707,7 +1927,7 @@ export default function App() {
   };
 
   const handleTriggerAggregatorSync = async (
-    scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'single',
+    scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'news' | 'capital_market' | 'single',
     sourceId?: string
   ) => {
     if (!isAdmin || !adminBearerToken) {
@@ -1732,6 +1952,8 @@ export default function App() {
 
       if (scope === 'all' || scope === 'jobs') await syncExternalJobs(false, false);
       if (scope === 'all' || scope === 'fx') await fetchFxRates(false, false);
+      if (scope === 'all' || scope === 'news') await fetchTopNews(false, false);
+      if (scope === 'all' || scope === 'capital_market') await fetchCapitalMarket(false, false);
       if (scope === 'all' || scope === 'opportunities' || scope === 'single') {
         await fetchOpportunities(false, false);
       }
@@ -1880,6 +2102,169 @@ export default function App() {
     }
   };
 
+  const handleSaveResumeToProfile = (resume: CandidateResumeFile) => {
+    if (!currentUser) {
+      openAuthModal({
+        mode: 'signin',
+        notice: 'Sign in to save CVs to your candidate profile.',
+      });
+      return;
+    }
+    setState((prev) => ({
+      ...prev,
+      users: prev.users.map((u) => {
+        if (u.email.toLowerCase() !== currentUser.email.toLowerCase()) return u;
+        const existing = (u.resumes || []).filter((r) => r.id !== resume.id);
+        const normalized = resume.isPrimary
+          ? existing.map((r) => ({ ...r, isPrimary: false }))
+          : existing;
+        return {
+          ...u,
+          resumes: [resume, ...normalized].slice(0, 8),
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+    }));
+    showToast(`Saved "${resume.fileName}" to your profile CVs.`);
+  };
+
+  const handleSaveInterviewSession = (session: AiInterviewSession) => {
+    setState((prev) => ({
+      ...prev,
+      interviewSessions: [session, ...(prev.interviewSessions || [])].slice(0, 30),
+    }));
+    showToast(`Mock interview practice saved (Score: ${session.averageScore}/100).`);
+  };
+
+  const handleCreateJobAlert = (alertInput: Omit<JobAlertConfig, 'id' | 'email' | 'createdAt'>) => {
+    if (!currentUser) {
+      openAuthModal({ mode: 'signin', notice: 'Sign in to configure personalized job alerts.' });
+      return;
+    }
+    const newAlert: JobAlertConfig = {
+      ...alertInput,
+      id: `alert-${Date.now()}`,
+      email: currentUser.email,
+      createdAt: new Date().toISOString(),
+    };
+    const instantMatches = findMatchingJobsForAlert(newAlert, state.jobs);
+    setState((prev) => {
+      const notifs = buildJobAlertNotifications([newAlert], state.jobs, prev.notifications || []);
+      return {
+        ...prev,
+        jobAlerts: [newAlert, ...(prev.jobAlerts || [])],
+        notifications:
+          notifs.length > 0 ? [...notifs, ...(prev.notifications || [])] : prev.notifications,
+      };
+    });
+    showToast(
+      `Job alert saved (${instantMatches.length} currently matching open role${
+        instantMatches.length === 1 ? '' : 's'
+      }).`
+    );
+  };
+
+  const handleToggleJobAlert = (alertId: string, patch: Partial<JobAlertConfig>) => {
+    setState((prev) => ({
+      ...prev,
+      jobAlerts: (prev.jobAlerts || []).map((a) => (a.id === alertId ? { ...a, ...patch } : a)),
+    }));
+  };
+
+  const handleDeleteJobAlert = (alertId: string) => {
+    setState((prev) => ({
+      ...prev,
+      jobAlerts: (prev.jobAlerts || []).filter((a) => a.id !== alertId),
+    }));
+    showToast('Job alert removed.');
+  };
+
+  const handleMarkNotificationRead = (notifId: string) => {
+    setState((prev) => ({
+      ...prev,
+      notifications: (prev.notifications || []).map((n) =>
+        n.id === notifId ? { ...n, read: true } : n
+      ),
+    }));
+  };
+
+  const handleMarkAllNotificationsRead = () => {
+    if (!currentUser) return;
+    const emailLower = currentUser.email.toLowerCase();
+    setState((prev) => ({
+      ...prev,
+      notifications: (prev.notifications || []).map((n) =>
+        n.recipientEmail.toLowerCase() === emailLower ? { ...n, read: true } : n
+      ),
+    }));
+    showToast('All notifications marked as read.');
+  };
+
+  const handleReportJob = (job: JobListing, reason: string) => {
+    const cleanReason = reason.trim();
+    if (cleanReason.length < 5) {
+      showToast('Please provide a brief reason before submitting a report.', true);
+      return;
+    }
+    const entry: ReportedListingEntry = {
+      id: `rep-${Date.now()}`,
+      targetType: 'job',
+      targetId: job.id,
+      targetTitle: `${job.titleEn} — ${job.companyName}`,
+      reporterEmail: currentUser?.email || 'anonymous@visitor.et',
+      reason: cleanReason,
+      status: 'open',
+      createdAt: new Date().toISOString(),
+    };
+    setState((prev) => ({
+      ...prev,
+      reportedListings: [entry, ...(prev.reportedListings || [])],
+      logs: [
+        {
+          id: `log-${Date.now()}-rep`,
+          userEmail: entry.reporterEmail,
+          actionType: 'REPORT_LISTING',
+          details: `Reported "${entry.targetTitle}": ${cleanReason}`,
+          createdAt: entry.createdAt,
+        },
+        ...prev.logs,
+      ],
+    }));
+    showToast('Thank you. Your listing report has been queued for Administrator review.');
+  };
+
+  const handleResolveReport = (
+    reportId: string,
+    status: 'resolved' | 'dismissed',
+    note?: string,
+    pauseJobId?: string
+  ) => {
+    if (!canAccessActivity(currentUser, 'admin_console').allowed || !currentUser) {
+      showToast('Administrator authentication required.', true);
+      return;
+    }
+    setState((prev) => ({
+      ...prev,
+      reportedListings: (prev.reportedListings || []).map((r) =>
+        r.id === reportId ? { ...r, status, resolutionNote: note } : r
+      ),
+      jobs: pauseJobId
+        ? prev.jobs.map((j) => (j.id === pauseJobId ? { ...j, status: 'paused' } : j))
+        : prev.jobs,
+      logs: [
+        {
+          id: `log-${Date.now()}-mod`,
+          userEmail: currentUser.email,
+          actionType: 'ADMIN_MODERATE_REPORT',
+          details: `${status.toUpperCase()} report ${reportId}${pauseJobId ? ` & paused job ${pauseJobId}` : ''}.`,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev.logs,
+      ],
+    }));
+    showToast(pauseJobId ? 'Report resolved & flagged listing paused.' : `Report ${status}.`);
+  };
+
   const navigateView = (view: AppView) => {
     if (view === 'admin' && !isAdmin) {
       showToast('Administrator console is restricted to authorized administrators.', true);
@@ -1887,6 +2272,9 @@ export default function App() {
     }
     if (view !== 'admin') {
       setAdminRequestedTab(undefined);
+    }
+    if (view !== 'activity') {
+      setActivityRequestedTab(undefined);
     }
     setActiveView(view);
     if (typeof window !== 'undefined') {
@@ -1907,6 +2295,7 @@ export default function App() {
         onNavigate={navigateView}
         currentUser={currentUser}
         pendingApprovalCount={pendingApprovalCount}
+        unreadNotificationCount={unreadNotificationCount}
         language={state.language}
         onOpenAuth={() => openAuthModal({ mode: currentUser ? 'profile' : 'signin' })}
         onOpenHelp={() => setHelpModalOpen(true)}
@@ -1928,7 +2317,34 @@ export default function App() {
             onToggleLanguage={handleToggleLanguage}
             onToggleSaveJob={handleToggleSaveJob}
             onOpenApplyModal={(job) => setApplyModalJob(job)}
+            onOpenAiMatch={(job) => {
+              setAiPreselectedJobId(job.id);
+              navigateView('ai_studio');
+            }}
+            onReportJob={handleReportJob}
             onNavigateEmployer={() => setActiveView('employer')}
+          />
+        )}
+
+        {activeView === 'ai_studio' && (
+          <AiCareerStudioView
+            currentUser={currentUser}
+            jobs={state.jobs}
+            preselectedJobId={aiPreselectedJobId}
+            interviewSessions={state.interviewSessions || []}
+            onSaveResumeToProfile={handleSaveResumeToProfile}
+            onSaveInterviewSession={handleSaveInterviewSession}
+            onApplyJob={(job) => setApplyModalJob(job)}
+            onOpenAuth={() =>
+              openAuthModal({
+                mode: 'signin',
+                notice: 'Sign in or register to save CVs, mock interviews, and tailored recommendations.',
+              })
+            }
+            onGoToProfile={() => {
+              setActivityRequestedTab('profile');
+              setActiveView('activity');
+            }}
           />
         )}
 
@@ -1947,6 +2363,26 @@ export default function App() {
           />
         )}
 
+        {activeView === 'news' && (
+          <TopNewsView
+            articles={newsData?.articles || []}
+            sources={newsData?.sources || []}
+            syncedAt={newsData?.syncedAt || null}
+            isSyncing={isSyncingNews}
+            errorMessage={newsError}
+            onRefresh={() => void fetchTopNews(true, true)}
+          />
+        )}
+
+        {activeView === 'capital_market' && (
+          <CapitalMarketView
+            data={capitalMarketData}
+            isSyncing={isSyncingCapital}
+            errorMessage={capitalError}
+            onRefresh={() => void fetchCapitalMarket(true, true)}
+          />
+        )}
+
         {activeView === 'opportunities' && (
           <OpportunitiesHubView
             opportunities={oppData?.items || []}
@@ -1955,6 +2391,8 @@ export default function App() {
             fxRates={fxData?.rates || []}
             trainingPrograms={state.trainingPrograms}
             products={state.products}
+            newsArticles={newsData?.articles || []}
+            capitalEquities={capitalMarketData?.equities || []}
             savedOpportunityIds={currentSavedOpportunityIds}
             syncedAt={oppData?.syncedAt || null}
             isSyncing={isSyncingOpp}
@@ -2006,6 +2444,8 @@ export default function App() {
         {activeView === 'activity' && (
           <MyActivityView
             currentUserEmail={state.currentUserEmail}
+            currentUser={currentUser}
+            requestedTab={activityRequestedTab}
             jobs={state.jobs}
             savedJobIds={currentSavedJobIds}
             opportunities={oppData?.items || []}
@@ -2015,12 +2455,21 @@ export default function App() {
             products={state.products}
             receipts={state.receipts}
             trainingRequests={state.trainingRequests}
+            jobAlerts={state.jobAlerts || []}
+            notifications={state.notifications || []}
             onToggleSaveJob={handleToggleSaveJob}
             onToggleSaveOpportunity={handleToggleSaveOpportunity}
             onApplyJob={(job) => setApplyModalJob(job)}
             onDownloadMaterial={handleDownloadMaterial}
             onDownloadInvoice={handleDownloadInvoice}
             onDownloadTrainingProposal={handleDownloadTrainingProposal}
+            onUpdateProfile={handleUpdateOwnProfile}
+            onCreateJobAlert={handleCreateJobAlert}
+            onToggleJobAlert={handleToggleJobAlert}
+            onDeleteJobAlert={handleDeleteJobAlert}
+            onMarkNotificationRead={handleMarkNotificationRead}
+            onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+            onOpenAiStudio={() => navigateView('ai_studio')}
             onBrowseJobs={() => navigateView('jobs')}
             onBrowseOpportunities={() => navigateView('opportunities')}
             onBrowseStore={() => navigateView('store')}
@@ -2045,6 +2494,8 @@ export default function App() {
             onUpdateJob={handleUpdateEmployerJob}
             onDeleteJob={handleDeleteEmployerJob}
             onUpdateApplicationStage={handleUpdateApplicationStage}
+            onUpdateApplicationDetails={handleUpdateApplicationDetails}
+            onUpdateCompanyProfile={handleUpdateOwnProfile}
             onToggleJobActiveStatus={handleEmployerToggleJobPause}
             onDownloadInvoice={handleDownloadInvoice}
             onRequireAuth={(opts) => openAuthModal(opts)}
@@ -2069,8 +2520,10 @@ export default function App() {
             aggregatorOverview={aggregatorOverview}
             fxRates={fxData?.rates || []}
             opportunities={oppData?.items || []}
+            reportedListings={state.reportedListings || []}
             isSyncingAggregator={isSyncingAggregator}
             requestedTab={adminRequestedTab}
+            onResolveReport={handleResolveReport}
             onSyncExternalJobs={() => void syncExternalJobs(true, true)}
             onTriggerAggregatorSync={handleTriggerAggregatorSync}
             onAddCustomSource={handleAddCustomSource}
@@ -2133,10 +2586,31 @@ export default function App() {
             </button>
             <button
               type="button"
+              onClick={() => navigateView('ai_studio')}
+              className="hover:text-slate-900"
+            >
+              AI Career
+            </button>
+            <button
+              type="button"
               onClick={() => navigateView('fx')}
               className="hover:text-slate-900"
             >
               Bank FX
+            </button>
+            <button
+              type="button"
+              onClick={() => navigateView('capital_market')}
+              className="hover:text-slate-900"
+            >
+              Capital Market
+            </button>
+            <button
+              type="button"
+              onClick={() => navigateView('news')}
+              className="hover:text-slate-900"
+            >
+              Top News
             </button>
             <button
               type="button"

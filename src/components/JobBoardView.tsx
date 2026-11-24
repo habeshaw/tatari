@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Search,
   Share2,
+  Sparkles,
   Star,
   X,
 } from 'lucide-react';
@@ -40,6 +41,8 @@ interface JobBoardViewProps {
   onToggleLanguage: (lang: Language) => void;
   onToggleSaveJob: (jobId: string) => void;
   onOpenApplyModal: (job: JobListing) => void;
+  onOpenAiMatch?: (job: JobListing) => void;
+  onReportJob?: (job: JobListing, reason: string) => void;
   onNavigateEmployer: () => void;
 }
 
@@ -57,6 +60,8 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
   onToggleLanguage,
   onToggleSaveJob,
   onOpenApplyModal,
+  onOpenAiMatch,
+  onReportJob,
   onNavigateEmployer,
 }) => {
   const t = TRANSLATIONS[language];
@@ -83,6 +88,8 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
   });
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [copiedJobId, setCopiedJobId] = useState<string | null>(null);
+  const [reportOpenForJobId, setReportOpenForJobId] = useState<string | null>(null);
+  const [reportReasonInput, setReportReasonInput] = useState('');
 
   const visibleJobs = useMemo(() => {
     const base = filterJobs(jobs, criteria);
@@ -281,7 +288,61 @@ export const JobBoardView: React.FC<JobBoardViewProps> = ({
                 </>
               )}
             </button>
+
+            {onOpenAiMatch && (
+              <button
+                type="button"
+                onClick={() => onOpenAiMatch(job)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#0F766E]/30 bg-emerald-50/70 px-3.5 py-2.5 text-xs font-semibold text-[#0F766E] transition-colors hover:bg-emerald-100 whitespace-nowrap shrink-0"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Analyze Fit with AI</span>
+              </button>
+            )}
+
+            {onReportJob && (
+              <button
+                type="button"
+                onClick={() => {
+                  setReportOpenForJobId((prev) => (prev === job.id ? null : job.id));
+                  setReportReasonInput('');
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50 whitespace-nowrap shrink-0"
+              >
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                <span>Report</span>
+              </button>
+            )}
           </div>
+
+          {onReportJob && reportOpenForJobId === job.id && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!reportReasonInput.trim()) return;
+                onReportJob(job, reportReasonInput.trim());
+                setReportOpenForJobId(null);
+                setReportReasonInput('');
+              }}
+              className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs"
+            >
+              <input
+                type="text"
+                required
+                value={reportReasonInput}
+                onChange={(e) => setReportReasonInput(e.target.value)}
+                placeholder="Reason for reporting listing (e.g. misleading pay, expired, spam)..."
+                aria-label="Reason for reporting listing"
+                className="min-w-[200px] flex-1 rounded border border-amber-300 bg-white px-2.5 py-1.5 text-xs text-slate-900"
+              />
+              <button
+                type="submit"
+                className="rounded bg-amber-900 px-3 py-1.5 font-semibold text-white hover:bg-amber-800"
+              >
+                Submit Report
+              </button>
+            </form>
+          )}
 
           {isExternal && job.sourceUrl && (
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-700">

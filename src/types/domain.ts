@@ -5,7 +5,10 @@ export type UserRole = 'seeker' | 'employer' | 'admin';
 export type AccountStatus = 'pending' | 'approved' | 'suspended';
 
 export type AppView =
+  | 'news'
+  | 'capital_market'
   | 'jobs'
+  | 'ai_studio'
   | 'fx'
   | 'opportunities'
   | 'training'
@@ -39,6 +42,7 @@ export type ApplicationStage =
   | 'Under Review'
   | 'Shortlisted'
   | 'Interview'
+  | 'Offered'
   | 'Hired'
   | 'Rejected';
 
@@ -48,6 +52,35 @@ export type PaymentVerificationStatus = 'pending_verification' | 'verified' | 'r
 
 export type OrderApprovalStatus = 'pending_approval' | 'approved' | 'rejected';
 
+export interface CandidateExperienceItem {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  startDate: string;
+  endDate: string;
+  current?: boolean;
+  summary: string;
+}
+
+export interface CandidateEducationItem {
+  id: string;
+  degree: string;
+  institution: string;
+  fieldOfStudy: string;
+  graduationYear: string;
+}
+
+export interface CandidateResumeFile {
+  id: string;
+  fileName: string;
+  fileType: 'pdf' | 'docx' | 'txt';
+  fileSizeBytes: number;
+  uploadedAt: string;
+  extractedText: string;
+  isPrimary?: boolean;
+}
+
 export interface UserProfile {
   email: string;
   fullName: string;
@@ -55,7 +88,23 @@ export interface UserProfile {
   tinNumber?: string;
   phone?: string;
   headline?: string;
+  location?: string;
+  bio?: string;
+  avatarDataUrl?: string;
+  skills?: string[];
+  languages?: string[];
+  certifications?: string[];
+  careerInterests?: string[];
+  yearsExperience?: number;
+  experience?: CandidateExperienceItem[];
+  education?: CandidateEducationItem[];
+  resumes?: CandidateResumeFile[];
   defaultResumeUrl?: string;
+  companyWebsite?: string;
+  companyLocation?: string;
+  companyDescription?: string;
+  companyLogoDataUrl?: string;
+  isRecruitmentAgency?: boolean;
   role: UserRole;
   status: AccountStatus;
   passwordHash: string;
@@ -105,6 +154,8 @@ export interface JobListing {
   isExpired?: boolean;
   isDemoSeed?: boolean;
   fingerprint?: string;
+  skills?: string[];
+  industry?: string;
 }
 
 export type ExternalJobSourceId = 'ethiojobs' | 'geezjobs' | 'effoysira';
@@ -129,10 +180,17 @@ export interface JobApplication {
   applicantEmail: string;
   phone: string;
   resumeUrl: string;
+  resumeId?: string;
+  resumeFileName?: string;
+  resumeText?: string;
   coverNote: string;
   yearsExperience: string;
   status: ApplicationStage;
+  aiMatchScore?: number;
+  aiMatchSummary?: string;
+  humanDecisionOverride?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface DigitalProduct {
@@ -472,7 +530,7 @@ export interface CollectionRunEntry {
   id: string;
   startedAt: string;
   completedAt: string;
-  scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'single';
+  scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'news' | 'capital_market' | 'single';
   itemsCollected: number;
   duplicatesSkipped: number;
   failedSources: number;
@@ -502,6 +560,8 @@ export interface AggregatorOverviewResponse {
   jobSources: ExternalJobSourceStatus[];
   fxBankStatuses: BankFxSourceStatus[];
   opportunitySources: AggregationSourceRecord[];
+  newsSources?: NewsSourceStatus[];
+  capitalMarketSources?: CapitalMarketSourceStatus[];
   collectionRuns: CollectionRunEntry[];
   collectionErrors: CollectionErrorEntry[];
   countsByModule: Record<string, number>;
@@ -510,4 +570,334 @@ export interface AggregatorOverviewResponse {
   expiredCount: number;
   anomaliesCount: number;
   lastFullSyncAt: string | null;
+  aiUsage?: AiUsageAnalytics;
 }
+
+// ============================================================================
+// MODULE Q: TOP GLOBAL, AFRICA & ETHIOPIA NEWS AGGREGATOR TYPES
+// ============================================================================
+
+export type NewsCoverageScope =
+  | 'World'
+  | 'World and Africa'
+  | 'Africa'
+  | 'Ethiopia'
+  | 'Ethiopia and world';
+
+export type NewsPublisherId =
+  | 'reuters'
+  | 'bbc_news'
+  | 'al_jazeera'
+  | 'cnn'
+  | 'ap_news'
+  | 'africanews'
+  | 'allafrica'
+  | 'addis_standard'
+  | 'the_reporter'
+  | 'bbc_amharic';
+
+export interface NewsArticleRecord {
+  id: string;
+  publisherId: NewsPublisherId;
+  publisherName: string;
+  publisherDomain: string;
+  coverage: NewsCoverageScope;
+  language: 'en' | 'am';
+  title: string;
+  summary: string;
+  sourceUrl: string;
+  imageUrl?: string;
+  category: string;
+  publishedAt: string | null;
+  collectedAt: string;
+  sourceMethod: 'rss_xml' | 'wp_rest_json' | 'news_index_rss';
+  verificationStatus: 'Verified' | 'Stale';
+  fingerprint: string;
+}
+
+export interface NewsSourceStatus {
+  id: NewsPublisherId;
+  name: string;
+  domain: string;
+  homeUrl: string;
+  feedUrl: string;
+  coverage: NewsCoverageScope;
+  language: 'en' | 'am';
+  method: 'rss_xml' | 'wp_rest_json' | 'news_index_rss';
+  status: 'Verified' | 'Stale' | 'Collection failed' | 'Source unavailable';
+  articlesCollected: number;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  errorMessage?: string;
+}
+
+export interface NewsApiResponse {
+  articles: NewsArticleRecord[];
+  sources: NewsSourceStatus[];
+  syncedAt: string;
+  cached?: boolean;
+}
+
+// ============================================================================
+// MODULE R: ETHIOPIAN CAPITAL MARKET & ESX DAILY SHARE SALES ACTIVITY TYPES
+// ============================================================================
+
+export interface CapitalMarketPricePoint {
+  date: string;
+  price: number;
+}
+
+export interface CapitalMarketEquityRecord {
+  symbol: string;
+  companyName: string;
+  sector: string;
+  securityType: string;
+  dateListed: string | null;
+  dateIncorporated: string | null;
+  listedCapitalEtb: number | null;
+  listedShares: number | null;
+  numberOfShareholders: number | null;
+  lastPriceEtb: number | null;
+  previousCloseEtb: number | null;
+  changeEtb: number | null;
+  changePct: number | null;
+  periodHighEtb: number | null;
+  periodLowEtb: number | null;
+  sessionDate: string | null;
+  marketCapImpliedEtb: number | null;
+  dailyVolumeNote: string;
+  tradingStatus: 'Continuous Trading' | 'Pre-Open' | 'Market Closed' | 'Listed / Quote Pending';
+  priceHistory: CapitalMarketPricePoint[];
+  esxProfileUrl: string;
+  marketDataUrl: string;
+  lastVerifiedAt: string;
+  sourceName: string;
+  verificationStatus: 'Verified' | 'Stale' | 'Source unavailable';
+}
+
+export interface CapitalMarketInterbankTradeRecord {
+  id: string;
+  weekLabel: string;
+  maturity: string;
+  volumeEtb: number | null;
+  volumeLabel: string;
+  totalTrades: number | null;
+  weightedAvgRatePct: number | null;
+  rateChangePct: number | null;
+  sourceUrl: string;
+}
+
+export interface CapitalMarketTBillRecord {
+  id: string;
+  auctionNo: string;
+  auctionDate: string;
+  tradingSymbol: string;
+  tenorDays: string;
+  listedDate: string;
+  maturityDate: string;
+  amountAcceptedEtbMillions: number | null;
+  weightedAvgYieldPct: number | null;
+  sourceUrl: string;
+}
+
+export interface CapitalMarketAnnouncement {
+  id: string;
+  title: string;
+  summary: string;
+  publishedAt: string | null;
+  sourceName: string;
+  sourceUrl: string;
+  category: string;
+}
+
+export interface CapitalMarketSourceStatus {
+  id: string;
+  name: string;
+  domain: string;
+  url: string;
+  role: 'Primary Exchange' | 'Equity Feed' | 'Fixed Income Feed' | 'Regulator';
+  status: 'Verified' | 'Stale' | 'Source unavailable' | 'Collection failed';
+  recordsCollected: number;
+  lastCheckedAt: string;
+  errorMessage?: string;
+}
+
+export interface CapitalMarketSummaryMetrics {
+  listedCompaniesCount: number;
+  pricedEquitiesCount: number;
+  totalListedShares: number;
+  totalImpliedMarketCapEtb: number;
+  latestSessionDate: string | null;
+  advancersCount: number;
+  declinersCount: number;
+  unchangedCount: number;
+  topGainerSymbol: string | null;
+  topGainerPct: number | null;
+  latestInterbankVolumeEtb: number | null;
+  latestInterbankTradesCount: number | null;
+  latestInterbankWeek: string | null;
+  marketSessionState: string;
+}
+
+export interface CapitalMarketApiResponse {
+  equities: CapitalMarketEquityRecord[];
+  interbankTrades: CapitalMarketInterbankTradeRecord[];
+  tBills: CapitalMarketTBillRecord[];
+  announcements: CapitalMarketAnnouncement[];
+  sources: CapitalMarketSourceStatus[];
+  summary: CapitalMarketSummaryMetrics;
+  syncedAt: string;
+  cached?: boolean;
+}
+
+// ============================================================================
+// MODULE S: AI RECRUITMENT, ALERTS, NOTIFICATIONS & MODERATION TYPES
+// ============================================================================
+
+export interface JobAlertConfig {
+  id: string;
+  email: string;
+  keywords: string;
+  location: string;
+  category: string;
+  remoteType: string;
+  minSalaryEtb: number;
+  emailEnabled: boolean;
+  inAppEnabled: boolean;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface PlatformNotification {
+  id: string;
+  recipientEmail: string;
+  title: string;
+  message: string;
+  type: 'application_update' | 'job_alert' | 'ai_insight' | 'system';
+  linkView?: AppView;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface ReportedListingEntry {
+  id: string;
+  targetType: 'job' | 'company';
+  targetId: string;
+  targetTitle: string;
+  reporterEmail: string;
+  reason: string;
+  status: 'open' | 'resolved' | 'dismissed';
+  resolutionNote?: string;
+  createdAt: string;
+}
+
+export interface AiResumeAnalysisResult {
+  engine: 'openai' | 'deterministic';
+  modelLabel: string;
+  overallScore: number;
+  sectionScores: {
+    structure: number;
+    clarity: number;
+    experience: number;
+    education: number;
+    skills: number;
+  };
+  extractedSkills: string[];
+  strengths: string[];
+  weaknesses: string[];
+  missingInfo: string[];
+  missingKeywords: string[];
+  suggestions: string[];
+  improvedResumeText: string;
+  analyzedAt: string;
+}
+
+export interface AiJobMatchResult {
+  engine: 'openai' | 'deterministic';
+  modelLabel: string;
+  jobId: string;
+  jobTitle: string;
+  companyName: string;
+  compatibilityScore: number;
+  matchingSkills: string[];
+  missingSkills: string[];
+  relevantExperience: string[];
+  explanation: string;
+  suggestions: string[];
+  tailoredResumeText: string;
+  matchedAt: string;
+}
+
+export interface AiJobRecommendation {
+  jobId: string;
+  compatibilityScore: number;
+  matchReasons: string[];
+  matchingSkills: string[];
+  missingSkillsToLearn: string[];
+}
+
+export interface AiInterviewQuestion {
+  id: string;
+  category: 'Technical' | 'Behavioral' | 'Role-Specific' | 'Situational';
+  question: string;
+  focusTip: string;
+}
+
+export interface AiInterviewEvaluation {
+  engine: 'openai' | 'deterministic';
+  overallScore: number;
+  scores: {
+    communication: number;
+    relevance: number;
+    clarity: number;
+    technicalKnowledge: number;
+  };
+  strengths: string[];
+  improvements: string[];
+  suggestedStrongerAnswer: string;
+  feedbackSummary: string;
+}
+
+export interface AiInterviewSession {
+  id: string;
+  userEmail: string;
+  jobId?: string;
+  jobTitle: string;
+  questions: AiInterviewQuestion[];
+  answers: Record<string, string>;
+  evaluations: Record<string, AiInterviewEvaluation>;
+  averageScore: number;
+  completedAt: string;
+}
+
+export interface AiApplicantScreeningItem {
+  applicationId: string;
+  applicantName: string;
+  applicantEmail: string;
+  jobId: string;
+  jobTitle: string;
+  fitScore: number;
+  category: 'Strong Fit' | 'Potential Fit' | 'Needs Review';
+  summary: string;
+  matchingSkills: string[];
+  missingQualifications: string[];
+  biasCheckNote: string;
+}
+
+export interface AiUsageAnalytics {
+  resumeScans: number;
+  jobMatches: number;
+  recommendationsRuns: number;
+  interviewSessions: number;
+  employerScreenings: number;
+  totalAiRequests: number;
+  lastAiCallAt: string | null;
+}
+
+export interface AiEngineStatusResponse {
+  openAiConfigured: boolean;
+  model: string;
+  engineMode: 'openai' | 'deterministic';
+  usage: AiUsageAnalytics;
+}
+

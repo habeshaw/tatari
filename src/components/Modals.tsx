@@ -30,6 +30,9 @@ interface JobApplyModalProps {
     applicantEmail: string;
     phone: string;
     resumeUrl: string;
+    resumeId?: string;
+    resumeFileName?: string;
+    resumeText?: string;
     yearsExperience: string;
     coverNote: string;
     password?: string;
@@ -44,12 +47,23 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
   onOpenSignIn,
   onSubmit,
 }) => {
+  const savedResumes = currentUser?.resumes || [];
+  const defaultSavedCv = savedResumes.find((r) => r.isPrimary) || savedResumes[0];
+
   const [applicantName, setApplicantName] = useState(currentUser?.fullName || '');
   const [applicantEmail, setApplicantEmail] = useState(currentUser?.email || '');
   const [phone, setPhone] = useState(currentUser?.phone || '+251911');
   const [resumeUrl, setResumeUrl] = useState(
     currentUser?.defaultResumeUrl || 'https://drive.google.com/my-cv-2026'
   );
+  const [selectedResumeId, setSelectedResumeId] = useState<string>(defaultSavedCv?.id || '');
+  const [uploadedResumeName, setUploadedResumeName] = useState<string>(
+    defaultSavedCv?.fileName || ''
+  );
+  const [uploadedResumeText, setUploadedResumeText] = useState<string>(
+    defaultSavedCv?.extractedText || ''
+  );
+  const [isParsingCv, setIsParsingCv] = useState(false);
   const [yearsExperience, setYearsExperience] = useState('3-5 years');
   const [coverNote, setCoverNote] = useState('');
   const [password, setPassword] = useState('');
@@ -57,6 +71,48 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const isGuest = !currentUser;
+
+  const handleCvFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setError(null);
+    if (file.size > 5 * 1024 * 1024) {
+      setError('CV file exceeds the 5 MB upload limit.');
+      return;
+    }
+    setIsParsingCv(true);
+    try {
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () =>
+          typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Read error'));
+        reader.onerror = () => reject(new Error('Unable to read CV file.'));
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch('/api/ai/parse-cv', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, base64Data }),
+      });
+      const data = (await res.json()) as {
+        error?: string;
+        fileName?: string;
+        extractedText?: string;
+      };
+      if (!res.ok || !data.extractedText) {
+        setError(data.error || 'Could not parse uploaded CV document.');
+        return;
+      }
+      setSelectedResumeId('');
+      setUploadedResumeName(data.fileName || file.name);
+      setUploadedResumeText(data.extractedText);
+    } catch {
+      setError('Failed to extract CV document text.');
+    } finally {
+      setIsParsingCv(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,12 +147,17 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
       }
     }
 
+    const chosenCv = savedResumes.find((r) => r.id === selectedResumeId);
+
     const submitErr = onSubmit({
       job,
       applicantName: applicantName.trim(),
       applicantEmail: applicantEmail.trim().toLowerCase(),
       phone: phone.trim(),
       resumeUrl: resumeUrl.trim(),
+      resumeId: chosenCv?.id || undefined,
+      resumeFileName: chosenCv?.fileName || uploadedResumeName || undefined,
+      resumeText: chosenCv?.extractedText || uploadedResumeText || undefined,
       yearsExperience,
       coverNote: coverNote.trim(),
       password: isGuest ? password : undefined,
@@ -245,6 +306,75 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({
               </label>
             </div>
           )}
+
+          <div className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/70 p-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-slate-700">
+                Attach Saved or Uploaded CV (PDF / DOCX / TXT)
+              </span>
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                <Upload className="h-3.5 w-3.5 text-[#164081]" />
+                {isParsingCv ? 'Extracting CV...' : 'Upload CV File'}
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  onChange={(e) => void handleCvFileUpload(e)}
+                  disabled={isParsingCv}
+                  className="sr-only"
+                />
+              </label>
+            </div>
+
+            {savedResumes.length > 0 && (
+              <label className="block text-xs font-semibold text-slate-700">
+                Use Saved Profile CV
+                <select
+                  aria-label="Select saved CV from profile"
+                  value={selectedResumeId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedResumeId(id);
+                    const found = savedResumes.find((r) => r.id === id);
+                    if (found) {
+                      setUploadedResumeName(found.fileName);
+                      setUploadedResumeText(found.extractedText);
+                    } else {
+                      setUploadedResumeName('');
+                      setUploadedResumeText('');
+                    }
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:border-[#164081] focus:outline-none"
+                >
+                  <option value="">-- Choose a saved CV or upload below --</option>
+                  {savedResumes.map((cv) => (
+                    <option key={cv.id} value={cv.id}>
+                      {cv.fileName} ({cv.fileType.toUpperCase()})
+                      {cv.isPrimary ? ' · Primary' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {uploadedResumeName && (
+              <div className="flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800">
+                <span className="truncate font-medium">
+                  Attached CV: {uploadedResumeName}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedResumeId('');
+                    setUploadedResumeName('');
+                    setUploadedResumeText('');
+                  }}
+                  className="shrink-0 font-semibold text-emerald-900 hover:underline"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
 
           <label className="block text-xs font-semibold text-slate-700">
             CV / Resume Link (Google Drive, LinkedIn, or Portfolio) *

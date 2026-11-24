@@ -24,7 +24,10 @@ interface AdminSourcesHealthPanelProps {
   fxRates: BankFxRateRecord[];
   opportunities: AggregatedOpportunity[];
   isSyncing: boolean;
-  onTriggerSync: (scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'single', sourceId?: string) => Promise<void>;
+  onTriggerSync: (
+    scope: 'all' | 'jobs' | 'fx' | 'opportunities' | 'news' | 'capital_market' | 'single',
+    sourceId?: string
+  ) => Promise<void>;
   onAddCustomSource: (payload: {
     name: string;
     url: string;
@@ -66,6 +69,8 @@ export const AdminSourcesHealthPanel: React.FC<AdminSourcesHealthPanelProps> = (
 
   const flaggedFxRates = fxRates.filter((r) => r.anomalyFlagged);
   const opportunitySources = overview?.opportunitySources || [];
+  const newsSources = overview?.newsSources || [];
+  const capitalMarketSources = overview?.capitalMarketSources || [];
   const bankStatuses = overview?.fxBankStatuses || [];
   const runs = overview?.collectionRuns || [];
   const errors = overview?.collectionErrors || [];
@@ -146,6 +151,22 @@ export const AdminSourcesHealthPanel: React.FC<AdminSourcesHealthPanelProps> = (
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
               Sync Bank FX
+            </button>
+            <button
+              type="button"
+              disabled={isSyncing}
+              onClick={() => void onTriggerSync('news')}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Sync Top News
+            </button>
+            <button
+              type="button"
+              disabled={isSyncing}
+              onClick={() => void onTriggerSync('capital_market')}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Sync Capital Market
             </button>
             <button
               type="button"
@@ -528,6 +549,85 @@ export const AdminSourcesHealthPanel: React.FC<AdminSourcesHealthPanelProps> = (
           </table>
         </div>
       )}
+
+      {/* Top News & Ethiopian Capital Market Feed Health */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-5 py-3.5">
+            <h3 className="font-display text-sm font-bold text-slate-900">
+              Top News Publishers ({newsSources.length} Outlets)
+            </h3>
+          </div>
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
+              <tr>
+                <th className="px-4 py-2.5">Outlet</th>
+                <th className="px-4 py-2.5">Coverage</th>
+                <th className="px-4 py-2.5 text-right">Articles</th>
+                <th className="px-4 py-2.5">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {newsSources.map((ns) => (
+                <tr key={ns.id}>
+                  <td className="px-4 py-2 font-semibold text-slate-900">{ns.name}</td>
+                  <td className="px-4 py-2 text-slate-600">{ns.coverage}</td>
+                  <td className="px-4 py-2 text-right font-mono tabular-nums">
+                    {ns.articlesCollected}
+                  </td>
+                  <td className="px-4 py-2">
+                    <span
+                      className={`font-semibold ${
+                        ns.status === 'Verified' ? 'text-emerald-700' : 'text-rose-700'
+                      }`}
+                    >
+                      {ns.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-5 py-3.5">
+            <h3 className="font-display text-sm font-bold text-slate-900">
+              Capital Market &amp; ESX Sources ({capitalMarketSources.length} Feeds)
+            </h3>
+          </div>
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
+              <tr>
+                <th className="px-4 py-2.5">Source</th>
+                <th className="px-4 py-2.5">Role</th>
+                <th className="px-4 py-2.5 text-right">Records</th>
+                <th className="px-4 py-2.5">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {capitalMarketSources.map((cs) => (
+                <tr key={cs.id}>
+                  <td className="px-4 py-2 font-semibold text-slate-900">{cs.name}</td>
+                  <td className="px-4 py-2 text-slate-600">{cs.role}</td>
+                  <td className="px-4 py-2 text-right font-mono tabular-nums">
+                    {cs.recordsCollected}
+                  </td>
+                  <td className="px-4 py-2">
+                    <span
+                      className={`font-semibold ${
+                        cs.status === 'Verified' ? 'text-emerald-700' : 'text-amber-700'
+                      }`}
+                    >
+                      {cs.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Bank FX Status Summary & Collection Run History + Error Log */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

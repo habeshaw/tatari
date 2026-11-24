@@ -21,8 +21,10 @@ import type {
   AggregationSourceRecord,
   AppView,
   BankFxRateRecord,
+  CapitalMarketEquityRecord,
   DigitalProduct,
   JobListing,
+  NewsArticleRecord,
   OpportunityModuleType,
   TrainingProgram,
 } from '../types/domain';
@@ -34,6 +36,8 @@ interface OpportunitiesHubViewProps {
   fxRates: BankFxRateRecord[];
   trainingPrograms: TrainingProgram[];
   products: DigitalProduct[];
+  newsArticles?: NewsArticleRecord[];
+  capitalEquities?: CapitalMarketEquityRecord[];
   savedOpportunityIds: string[];
   syncedAt: string | null;
   isSyncing: boolean;
@@ -52,6 +56,8 @@ export const OpportunitiesHubView: React.FC<OpportunitiesHubViewProps> = ({
   fxRates,
   trainingPrograms,
   products,
+  newsArticles = [],
+  capitalEquities = [],
   savedOpportunityIds,
   syncedAt,
   isSyncing,
@@ -98,8 +104,20 @@ export const OpportunitiesHubView: React.FC<OpportunitiesHubViewProps> = ({
       opportunities,
       trainingPrograms,
       products,
+      newsArticles,
+      capitalEquities,
     });
-  }, [universalSearchActive, searchQuery, jobs, fxRates, opportunities, trainingPrograms, products]);
+  }, [
+    universalSearchActive,
+    searchQuery,
+    jobs,
+    fxRates,
+    opportunities,
+    trainingPrograms,
+    products,
+    newsArticles,
+    capitalEquities,
+  ]);
 
   const selectedOpp =
     filteredItems.find((i) => i.id === selectedOppId) || filteredItems[0] || null;
@@ -107,7 +125,9 @@ export const OpportunitiesHubView: React.FC<OpportunitiesHubViewProps> = ({
   const activeModuleMeta = OPPORTUNITY_MODULES_META.find((m) => m.id === selectedModule);
 
   const handleUniversalJump = (res: UniversalSearchResult) => {
-    if (res.section === 'jobs') onNavigateView('jobs');
+    if (res.section === 'news') onNavigateView('news');
+    else if (res.section === 'capital_market') onNavigateView('capital_market');
+    else if (res.section === 'jobs') onNavigateView('jobs');
     else if (res.section === 'fx') onNavigateView('fx');
     else if (res.section === 'training') onNavigateView('training');
     else if (res.section === 'store') onNavigateView('store');
@@ -225,7 +245,7 @@ export const OpportunitiesHubView: React.FC<OpportunitiesHubViewProps> = ({
                     setUniversalSearchActive(false);
                   }
                 }}
-                placeholder="Universal search across Tenders, Scholarships, Grants, Jobs, Bank FX, Training & Digital Store..."
+                placeholder="Universal search across Top News, ESX Capital Market, Jobs, Bank FX, Tenders & Store..."
                 aria-label="Search Ethiopian opportunities and platform modules"
                 className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
               />

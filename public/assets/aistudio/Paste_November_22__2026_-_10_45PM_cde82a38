@@ -1,0 +1,1255 @@
+Since your existing platform uses Supabase + Vercel + GitHub, I recommend upgrading it into a full-scale Ethiopian information aggregation platform without rebuilding everything from scratch.
+
+The most important requirement in your request is NO FAKE DATA.
+
+That means:
+
+- No invented job vacancies.
+- No fabricated exchange rates.
+- No fake tenders or scholarships.
+- No imaginary companies or training institutions.
+- No invented prices, dates, ratings, or contact information.
+- No demo listings presented as real information.
+- Every aggregated record must have a traceable original source.
+- Every listing must show when it was published, collected, and last verified.
+- Expired information must be clearly marked or removed from active listings.
+
+I have prepared a master upgrade prompt that you can give to your AI coding agent (Cursor, Claude Code, GitHub Copilot, or another coding assistant).
+
+My recommendation: Give the agent access to your existing GitHub project and ask it to inspect the entire codebase before changing anything. The goal is to upgrade your existing website, preserve working features, and implement the new functionality incrementally.
+
+## Master prompt: Upgrade my existing website into a world-class Ethiopian aggregator
+
+Copy the complete prompt below and give it to your coding agent.
+
+Writing
+
+# MASTER DEVELOPMENT PROMPT: TRANSFORM MY EXISTING WEBSITE INTO A WORLD-CLASS ETHIOPIAN OPPORTUNITY & INFORMATION AGGREGATOR
+
+## 1\. PROJECT OBJECTIVE
+
+I have an existing website with the following technology stack:
+
+- Backend and database: Supabase (PostgreSQL, Auth, Storage, Edge Functions).
+- Frontend deployment: Vercel.
+- Source code and version control: GitHub.
+- Existing modules:
+  1. Job aggregation.
+  2. Training and education aggregation.
+  3. Digital store.
+
+I want to upgrade my existing platform into a world-class, highly functional Ethiopian information aggregation and opportunity discovery platform.
+
+The platform should automatically collect, verify, organize, update, and display useful information from legitimate external websites and official sources in Ethiopia.
+
+This is an UPGRADE of my existing website, NOT a request to build a separate website from scratch.
+
+Preserve existing functionality, user accounts, database records, design elements, and working features wherever possible.
+
+Do not remove or overwrite existing functionality without a justified migration plan.
+
+## 2\. MOST IMPORTANT REQUIREMENT: ZERO FABRICATED DATA
+
+This is a strict system-wide requirement.
+
+NEVER generate, invent, simulate, or fabricate real-world information.
+
+Specifically:
+
+- Never create fake jobs.
+- Never invent company names.
+- Never fabricate vacancies.
+- Never generate imaginary tenders.
+- Never invent scholarships.
+- Never invent training institutions.
+- Never fabricate foreign exchange rates.
+- Never invent bank rates.
+- Never create imaginary properties.
+- Never fabricate business contacts.
+- Never invent product prices.
+- Never invent event announcements.
+- Never invent funding opportunities.
+- Never display AI-generated information as verified facts.
+
+AI may assist with extracting, summarizing, categorizing, translating, and organizing verified information, but it must never invent missing facts.
+
+If a field is unavailable, display "Not provided by source."
+
+If information cannot be verified, mark it as "Unverified."
+
+If a source is inaccessible, report the collection failure instead of creating replacement information.
+
+If there is no real information, display a proper empty state.
+
+Do not use placeholder records in production.
+
+Any existing demo or seed records must be identified and prevented from appearing as genuine listings.
+
+## 3\. FIRST TASK: AUDIT THE EXISTING WEBSITE
+
+Before implementing anything:
+
+1. Inspect the complete GitHub repository.
+2. Understand the existing frontend framework and architecture.
+3. Inspect all existing Supabase tables and relationships.
+4. Inspect existing database migrations.
+5. Inspect Supabase authentication and Row Level Security policies.
+6. Inspect existing API routes and Edge Functions.
+7. Inspect Vercel deployment and environment configurations.
+8. Inspect the current job aggregation engine.
+9. Inspect the existing training aggregation engine.
+10. Inspect the digital store.
+11. Identify incomplete features, broken functions, duplicate code, and security problems.
+
+Prepare an architecture report.
+
+Identify which existing components can be reused.
+
+Do not assume that a feature is missing simply because it is not immediately visible.
+
+Do not destroy existing functionality while implementing new modules.
+
+Implement database changes using safe, version-controlled migrations.
+
+## 4\. MODULES TO IMPLEMENT
+
+### MODULE A: JOBS AND CAREERS AGGREGATOR
+
+Upgrade the existing job aggregation module.
+
+Collect legitimate job announcements from:
+
+- Ethiopian job portals.
+- Government institutions.
+- NGOs.
+- United Nations organizations.
+- International organizations.
+- Universities.
+- Private companies.
+- Recruitment agencies.
+- Authorized international remote-job platforms.
+
+Categories:
+
+- Government jobs.
+- Private-sector jobs.
+- NGO jobs.
+- UN jobs.
+- Banking and finance.
+- Engineering.
+- Healthcare.
+- IT and technology.
+- Education.
+- Accounting.
+- Administration.
+- Construction.
+- Agriculture.
+- Remote jobs.
+- Part-time jobs.
+- Full-time jobs.
+- Contract jobs.
+
+Every listing must contain, where available:
+
+- Job title.
+- Employer.
+- Job description.
+- Location.
+- Salary.
+- Employment type.
+- Required qualifications.
+- Experience requirements.
+- Application deadline.
+- Publication date.
+- Original source.
+- Original application URL.
+- Date collected.
+- Last verified date.
+- Listing status.
+
+Automatically detect duplicates and expired vacancies.
+
+Never assume an expired vacancy is still available.
+
+### MODULE B: ETHIOPIAN BANK FOREIGN EXCHANGE RATE AGGREGATOR
+
+This is a major priority.
+
+Build a comprehensive Ethiopian foreign exchange information center.
+
+Collect daily foreign exchange rates from Ethiopian commercial banks and the National Bank of Ethiopia.
+
+Include banks such as:
+
+- Commercial Bank of Ethiopia.
+- Awash Bank.
+- Dashen Bank.
+- Bank of Abyssinia.
+- Wegagen Bank.
+- Hibret Bank.
+- Nib International Bank.
+- Cooperative Bank of Oromia.
+- Oromia Bank.
+- Zemen Bank.
+- Bunna Bank.
+- Berhan Bank.
+- Enat Bank.
+- Addis International Bank.
+- Amhara Bank.
+- Siinqee Bank.
+- Gadaa Bank.
+- ZamZam Bank.
+- Tsedey Bank.
+- Other officially licensed Ethiopian banks.
+
+IMPORTANT: This is a source discovery list, not a claim that every listed bank currently publishes an accessible online exchange-rate feed.
+
+For each bank:
+
+1. Identify its official website.
+2. Find its official foreign exchange rate page, API, downloadable document, or authorized data feed.
+3. Determine whether the rates are actually published and accessible.
+4. Build a dedicated source adapter.
+5. Extract the published currency rates.
+6. Record the source publication date and collection timestamp.
+7. Store the original source URL.
+8. Detect rate changes.
+9. Preserve historical records.
+10. Record collection errors.
+
+Supported currencies should include those actually published by each bank, such as:
+
+- USD.
+- EUR.
+- GBP.
+- AED.
+- SAR.
+- KWD.
+- CAD.
+- AUD.
+- CHF.
+- JPY.
+- CNY.
+- Other currencies when supported by the source.
+
+For each currency and bank, capture:
+
+- Bank name.
+- Currency code.
+- Currency name.
+- Buying rate.
+- Selling rate.
+- Mid-market rate only if genuinely provided or calculated transparently.
+- Rate publication date.
+- Collection date and time.
+- Source URL.
+- Verification status.
+- Data freshness.
+- Source type.
+
+Clearly distinguish:
+
+- Cash buying rate.
+- Cash selling rate.
+- Transfer buying rate.
+- Transfer selling rate.
+- Any other rate categories published by the bank.
+
+Never combine different rate categories into one comparison.
+
+#### Foreign exchange dashboard
+
+Build a professional exchange rate dashboard with:
+
+1. All Ethiopian banks comparison table.
+2. Currency selector.
+3. Bank selector.
+4. Buying-rate comparison.
+5. Selling-rate comparison.
+6. Highest and lowest published rates.
+7. Historical exchange-rate charts.
+8. Daily rate change.
+9. Bank-by-bank rate history.
+10. Last updated timestamp.
+11. Original source links.
+12. Search and sorting.
+13. Mobile-responsive display.
+
+Allow users to compare the same currency across banks.
+
+Only compare equivalent rate types.
+
+#### National Bank of Ethiopia
+
+Show the National Bank of Ethiopia reference information separately from commercial bank rates.
+
+Never present the NBE reference rate as the actual selling or buying rate offered by every commercial bank.
+
+Clearly distinguish official reference rates, commercial bank rates, and any independently sourced market rates.
+
+#### Daily automated collection
+
+Use scheduled collection jobs.
+
+Recommended initial schedule:
+
+- Check published bank rates several times per day.
+- Increase collection frequency only where source policies allow.
+- Detect actual changes rather than creating artificial new records.
+- Preserve historical snapshots.
+- Display the actual publication date, not just the time your system collected the data.
+
+A bank that has not updated its rate must continue showing its previous rate with a stale-data warning.
+
+Do not assume that every bank publishes rates every day.
+
+If a bank has no accessible source, mark it as "Source unavailable" and provide an administrator workflow to add an authorized source.
+
+Never substitute another bank's rate.
+
+Never calculate a missing bank rate using a currency conversion API.
+
+An independent currency API may be used as a separately labeled supplementary market reference, never as a replacement for Ethiopian bank rates.
+
+### MODULE C: TENDER AND PROCUREMENT AGGREGATOR
+
+Collect verified tender opportunities from:
+
+- Ethiopian government procurement portals.
+- Government ministries.
+- Regional government institutions.
+- Public enterprises.
+- Universities.
+- UN agencies.
+- International NGOs.
+- Development organizations.
+- Private companies.
+
+Capture:
+
+- Tender title.
+- Organization.
+- Tender reference number.
+- Tender category.
+- Publication date.
+- Submission deadline.
+- Eligibility requirements.
+- Required documents.
+- Bid security, if published.
+- Tender document price, if published.
+- Original document link.
+- Original source.
+- Last verified timestamp.
+
+Categories:
+
+- Construction.
+- IT and software.
+- Medical supplies.
+- Office supplies.
+- Consultancy.
+- Transportation.
+- Agriculture.
+- Equipment.
+- Infrastructure.
+- Services.
+- Other procurement.
+
+Implement deadline reminders and expired tender detection.
+
+Never invent tender deadlines or tender reference numbers.
+
+### MODULE D: SCHOLARSHIP AND INTERNATIONAL OPPORTUNITIES
+
+Aggregate:
+
+- Undergraduate scholarships.
+- Master's scholarships.
+- PhD scholarships.
+- Fully funded scholarships.
+- Partial scholarships.
+- Research grants.
+- International fellowships.
+- Exchange programs.
+- Youth programs.
+- Leadership programs.
+- Internship opportunities.
+- International competitions.
+
+Sources may include universities, governments, scholarship providers, foundations, and authorized international opportunity portals.
+
+Display eligibility, country restrictions, funding coverage, deadlines, application instructions, and original application URLs only when supported by the source.
+
+### MODULE E: INTERNSHIP, VOLUNTEERING AND FREELANCE
+
+Aggregate:
+
+- Local internships.
+- International internships.
+- Remote internships.
+- Volunteer opportunities.
+- NGO volunteer programs.
+- Freelance projects.
+- Consulting assignments.
+- Graduate trainee programs.
+- Youth employment programs.
+- Remote work opportunities.
+
+Keep these opportunities separate from permanent employment vacancies.
+
+### MODULE F: TRAINING AND EDUCATION AGGREGATOR
+
+Upgrade the existing training module.
+
+Collect:
+
+- Online courses.
+- Physical training.
+- Professional certifications.
+- TVET programs.
+- University short courses.
+- Technology bootcamps.
+- Language courses.
+- Business training.
+- Entrepreneurship training.
+- Accounting and finance training.
+- Digital skills training.
+- Free courses.
+- Paid courses.
+
+Include the provider, actual price if available, delivery method, duration, enrollment deadline, certification details, and original registration link.
+
+Do not fabricate accreditation or certificate recognition.
+
+### MODULE G: GRANTS, FUNDING AND INVESTMENT
+
+Aggregate:
+
+- Startup grants.
+- SME funding.
+- Business competitions.
+- Innovation challenges.
+- Research funding.
+- NGO grants.
+- Development funding.
+- Business accelerator programs.
+- Incubator programs.
+- Entrepreneurship opportunities.
+- Investment programs.
+
+Show eligibility, geographic restrictions, funding amount, currency, deadlines, funding provider, and source documentation when available.
+
+Never infer a funding amount from an unrelated source.
+
+### MODULE H: ETHIOPIAN BUSINESS DIRECTORY
+
+Create a searchable business directory.
+
+Categories:
+
+- Companies.
+- NGOs.
+- International organizations.
+- Hospitals.
+- Clinics.
+- Schools.
+- Universities.
+- Hotels.
+- Restaurants.
+- Importers.
+- Exporters.
+- Manufacturers.
+- Construction companies.
+- IT companies.
+- Consultants.
+- Professional services.
+
+Collect only publicly available and appropriately sourced business information.
+
+Include business verification and claim-profile functionality.
+
+Do not generate fake business profiles.
+
+### MODULE I: REAL ESTATE AGGREGATOR
+
+Collect:
+
+- Houses for rent.
+- Houses for sale.
+- Apartments.
+- Commercial buildings.
+- Office spaces.
+- Warehouses.
+- Land.
+- Industrial property.
+
+Capture actual listed price, location, property specifications, images where authorized, publication date, source, and original contact or listing link.
+
+Detect duplicate listings across websites.
+
+Mark potentially outdated listings for re-verification.
+
+Never fabricate a property listing or its price.
+
+### MODULE J: EVENTS AND CONFERENCES
+
+Aggregate:
+
+- Conferences.
+- Business exhibitions.
+- Job fairs.
+- Technology events.
+- Workshops.
+- Seminars.
+- Academic events.
+- Cultural events.
+- Entrepreneurship events.
+- Professional networking events.
+
+Capture event dates, location, organizer, registration URL, ticket price where available, and original source.
+
+Automatically flag events that have already passed.
+
+### MODULE K: GOVERNMENT AND PUBLIC ANNOUNCEMENTS
+
+Aggregate publicly available:
+
+- Government recruitment announcements.
+- University admissions.
+- Examination schedules.
+- Public notices.
+- Business registration announcements.
+- Licensing information.
+- Tax-related notices.
+- Public service announcements.
+- Government programs.
+
+Always link to the original government publication.
+
+Do not reinterpret official announcements in ways that change their meaning.
+
+### MODULE L: VEHICLE MARKETPLACE
+
+Collect:
+
+- Used cars.
+- New cars.
+- Commercial vehicles.
+- Trucks.
+- Heavy machinery.
+- Motorcycles.
+- Vehicle rentals.
+- Spare parts.
+
+Capture verified listing details, published prices, seller information where publicly available, and original source links.
+
+### MODULE M: AGRICULTURE AND AGRIBUSINESS
+
+Aggregate:
+
+- Agricultural commodity prices.
+- Coffee market information.
+- Agricultural tenders.
+- Farming equipment.
+- Agricultural training.
+- Fertilizer and seed suppliers.
+- Agricultural investment opportunities.
+- Agricultural job vacancies.
+- Agricultural buyers and suppliers.
+
+Show market price dates and geographic coverage.
+
+Never represent a single market price as a nationwide price.
+
+### MODULE N: IMPORT, EXPORT AND TRADE OPPORTUNITIES
+
+Collect:
+
+- Trade announcements.
+- Import and export opportunities.
+- Supplier announcements.
+- Buyer opportunities.
+- Trade exhibitions.
+- Export market information.
+- Business registration and trade notices.
+- International trade tenders.
+
+Include the original source and publication date.
+
+### MODULE O: PROFESSIONAL CERTIFICATION AND EXAMINATION
+
+Collect:
+
+- Professional certification programs.
+- Certification examination schedules.
+- Professional development programs.
+- Licensing announcements.
+- Accreditation updates.
+- Examination registration announcements.
+- Professional association notices.
+
+Never claim that a certificate is officially recognized unless an authoritative source confirms it.
+
+### MODULE P: VEHICLE, PROPERTY AND GENERAL CLASSIFIEDS
+
+Provide a common classifieds search layer that can search authorized listings across supported sources without merging unrelated categories or losing original listing information.
+
+### MODULE Q: DIGITAL STORE
+
+Preserve and upgrade the existing digital store.
+
+Support:
+
+- Digital templates.
+- Business documents.
+- CV templates.
+- Excel templates.
+- Educational materials.
+- Professional resources.
+- Downloadable products.
+
+Keep actual product ownership, pricing, payments, download permissions, and transaction records secure.
+
+Do not generate fake reviews, sales counts, or ratings.
+
+## 5\. CENTRALIZED DATA AGGREGATION ENGINE
+
+This is the core of the entire platform.
+
+Build one reusable collection and processing architecture for all modules.
+
+Use the following architecture:
+
+External sources → Source discovery and registration → Authorized collection adapters → Data extraction → Data normalization → Validation → Duplicate detection → Source verification → Database storage → Search indexing → Website display → Alerts and notifications
+
+Support these collection methods:
+
+1. Official APIs.
+2. RSS feeds.
+3. Authorized website crawling.
+4. Publicly accessible structured data.
+5. Official downloadable files.
+6. Approved partner integrations.
+7. Administrator-managed source submissions.
+
+Each source must have:
+
+- Source name.
+- Source URL.
+- Source category.
+- Collection method.
+- Collection frequency.
+- Source permissions or terms reference.
+- Last successful collection.
+- Last failed collection.
+- Source status.
+- Error logs.
+- Active/inactive setting.
+
+Do not bypass authentication, CAPTCHAs, paywalls, or website access restrictions.
+
+Respect robots.txt, website terms, rate limits, copyright, and privacy requirements.
+
+Do not assume that publicly visible information is automatically licensed for unrestricted republication.
+
+Where full republication is not permitted, display a limited factual summary and link users to the original website.
+
+## 6\. DATA QUALITY AND ANTI-DUPLICATION SYSTEM
+
+Implement a reliable validation system.
+
+Each aggregated record should have:
+
+- Unique internal ID.
+- Module/category.
+- Original source ID.
+- Original source URL.
+- Original publication date, if available.
+- First collected timestamp.
+- Last checked timestamp.
+- Last changed timestamp.
+- Verification status.
+- Expiry date, if available.
+- Record status.
+- Content fingerprint.
+
+Build duplicate detection using:
+
+- Normalized titles.
+- Organization names.
+- Reference numbers.
+- Original URLs.
+- Dates.
+- Relevant content fingerprints.
+
+Do not automatically merge records simply because their titles are similar.
+
+Preserve source attribution when multiple authorized sources report the same opportunity.
+
+Possible statuses:
+
+- New.
+- Verified.
+- Updated.
+- Pending verification.
+- Unverified.
+- Expired.
+- Closed.
+- Source unavailable.
+- Removed.
+
+Do not display records with fabricated or missing essential information as verified.
+
+## 7\. SUPABASE DATABASE ARCHITECTURE
+
+Use Supabase PostgreSQL as the primary database.
+
+Inspect the existing schema before making migrations.
+
+Build reusable tables where appropriate, such as:
+
+- aggregation\_sources
+- source\_adapters
+- collection\_runs
+- collection\_errors
+- aggregated\_listings
+- listing\_sources
+- listing\_history
+- listing\_categories
+- listing\_verifications
+- bank\_exchange\_rates
+- bank\_exchange\_rate\_history
+- banks
+- currencies
+- user\_saved\_listings
+- user\_alert\_preferences
+- notification\_logs
+- admin\_audit\_logs
+
+Use appropriate relationships, foreign keys, indexes, constraints, and timestamps.
+
+Use JSONB only for genuinely variable source-specific metadata, not as a replacement for all structured fields.
+
+Implement Row Level Security.
+
+Public users may read approved public information.
+
+Only authorized administrators and backend services may create, modify, verify, or remove aggregated source records.
+
+Never expose Supabase service-role keys in frontend code.
+
+Never expose private API keys or collection credentials.
+
+Create proper migration files and document rollback procedures.
+
+## 8\. VERCEL AND SUPABASE AUTOMATION
+
+Implement reliable scheduled collection.
+
+Use:
+
+- Vercel Cron Jobs where appropriate.
+- Supabase Edge Functions for collection and processing.
+- PostgreSQL for persistent collection state.
+- Supabase queues or an equivalent reliable job queue when appropriate.
+- Retry mechanisms with exponential backoff.
+- Idempotent collection jobs.
+- Monitoring and error reporting.
+
+Do not depend on a user's browser being open to collect data.
+
+Do not use frontend JavaScript timers as a data collection mechanism.
+
+Do not run long, unbounded crawling jobs inside a normal Vercel request.
+
+Separate collection, extraction, validation, and publishing tasks.
+
+Support per-source collection schedules.
+
+If a collection fails, preserve existing verified data and show its last verified time.
+
+Prevent duplicate scheduled runs from creating duplicate records.
+
+## 9\. ADMINISTRATOR DASHBOARD
+
+Build a powerful administrator control center.
+
+Include:
+
+1. Total listings by module.
+2. Verified listings.
+3. Pending verification.
+4. Expired listings.
+5. Duplicate records detected.
+6. Active sources.
+7. Inactive sources.
+8. Failed collection jobs.
+9. Last successful collection.
+10. Collection history.
+11. Foreign exchange rate updates.
+12. Source freshness.
+13. User activity.
+14. System health.
+
+Administrators must be able to:
+
+- Add a new source.
+- Edit a source.
+- Disable a source.
+- Test a source.
+- Configure collection frequency.
+- View extraction results.
+- View collection errors.
+- Review records.
+- Approve or reject records.
+- Mark incorrect records.
+- Re-run collection.
+- View historical changes.
+- Manually correct an extracted field with an audit trail.
+
+Manual corrections must never overwrite original source evidence.
+
+Keep original extracted values and administrator-corrected values separately.
+
+## 10\. ADVANCED SEARCH AND DISCOVERY
+
+Build a universal search system that searches across all modules.
+
+Users should be able to search for:
+
+- Jobs.
+- Tenders.
+- Scholarships.
+- Training.
+- Events.
+- Grants.
+- Businesses.
+- Properties.
+- Vehicles.
+- Exchange rates.
+- Other opportunities.
+
+Implement filters appropriate to each category.
+
+Examples:
+
+Jobs:
+
+- Location.
+- Employer.
+- Sector.
+- Salary.
+- Employment type.
+- Deadline.
+
+Tenders:
+
+- Organization.
+- Tender category.
+- Region.
+- Deadline.
+- Reference number.
+
+Scholarships:
+
+- Country.
+- Degree.
+- Funding type.
+- Eligibility.
+- Deadline.
+
+Exchange rates:
+
+- Bank.
+- Currency.
+- Rate type.
+- Publication date.
+
+Support English and Amharic search where technically feasible.
+
+Use appropriate PostgreSQL full-text search, trigram matching, and multilingual normalization.
+
+Do not allow AI search to create fictional records.
+
+## 11\. AI FEATURES
+
+Use AI as an assistant for verified information, not as an information source.
+
+Implement:
+
+- Automatic categorization.
+- Information extraction.
+- Amharic-English translation.
+- Short summaries.
+- Duplicate detection assistance.
+- Search recommendations.
+- Personalized opportunity matching.
+- Deadline reminders.
+- Related opportunity suggestions.
+
+Every AI-generated summary must remain linked to the original source.
+
+AI must not invent salary figures, deadlines, company details, contact information, exchange rates, or eligibility requirements.
+
+Where translation is uncertain, retain the original source text.
+
+## 12\. USER FEATURES
+
+Build:
+
+- Registration and login.
+- User profiles.
+- Saved listings.
+- Saved searches.
+- Personalized recommendations.
+- Email alerts.
+- Optional SMS alerts.
+- Optional Telegram notifications.
+- Deadline reminders.
+- Recently viewed listings.
+- Followed organizations.
+- Preferred locations.
+- Preferred opportunity categories.
+
+Respect notification preferences and privacy.
+
+Do not send fake alerts or duplicate notifications.
+
+## 13\. DESIGN AND USER EXPERIENCE
+
+Transform the website into a premium, modern, professional platform.
+
+Design principles:
+
+- World-class visual quality.
+- Modern responsive layout.
+- Excellent desktop and mobile experience.
+- Fast page loading.
+- Clean typography.
+- Consistent spacing.
+- Clear navigation.
+- Professional dashboards.
+- Accessible color contrast.
+- Easy-to-use search.
+- Clear filters.
+- Helpful empty states.
+- Loading states.
+- Error handling.
+
+Create a professional home page featuring:
+
+1. Universal search.
+2. Latest verified jobs.
+3. Latest tenders.
+4. Latest scholarships.
+5. Training opportunities.
+6. Bank exchange rate comparison.
+7. Grants and funding.
+8. Upcoming events.
+9. Business directory.
+10. Latest announcements.
+
+Display data freshness prominently.
+
+Use "Last checked" and "Published on" labels correctly.
+
+Do not display misleading live indicators.
+
+Do not create fake popularity counters, fake testimonials, or fabricated statistics.
+
+Support Ethiopian context:
+
+- Ethiopian Birr (ETB).
+- Ethiopian date handling where useful.
+- Gregorian dates for external source fidelity.
+- Addis Ababa and Ethiopian regional locations.
+- English and Amharic.
+- Responsive mobile design.
+
+## 14\. FOREIGN EXCHANGE RATE DATA INTEGRITY
+
+Implement additional safeguards:
+
+- Validate positive numerical rates.
+- Reject malformed currency codes.
+- Preserve the source's original precision.
+- Never silently convert currencies.
+- Never treat a missing rate as zero.
+- Never substitute stale rates without a visible warning.
+- Never combine cash and transfer rates.
+- Record every rate change with its source and timestamp.
+- Flag unusually large changes for administrator review.
+- Keep historical records immutable.
+- Clearly identify rates that were manually corrected.
+- Separate independently sourced market data from bank-published data.
+
+A rate must not be labeled "verified" merely because it was successfully scraped.
+
+Verification must include a valid source and a successful data validation process.
+
+## 15\. SECURITY AND RELIABILITY
+
+Implement:
+
+- Secure authentication.
+- Role-based authorization.
+- Supabase Row Level Security.
+- Server-side secret management.
+- Input validation.
+- API rate limiting.
+- Protection against SQL injection.
+- Protection against XSS.
+- Secure webhook validation.
+- Audit logging.
+- Backup and recovery procedures.
+- Error monitoring.
+- Safe file handling.
+- Restricted administrative operations.
+
+Do not expose internal database credentials or service-role keys.
+
+Treat external website content as untrusted input.
+
+## 16\. PERFORMANCE AND SCALABILITY
+
+The system should be designed to support:
+
+- Hundreds of external sources.
+- Thousands of daily listings.
+- Growing user traffic.
+- Multiple scheduled collection tasks.
+- Historical data.
+- Fast filtering and searching.
+
+Implement:
+
+- Appropriate PostgreSQL indexes.
+- Pagination.
+- Efficient database queries.
+- Caching where appropriate.
+- Background processing.
+- Incremental data updates.
+- Image optimization.
+- Search optimization.
+
+Do not load thousands of records into the browser unnecessarily.
+
+## 17\. TESTING AND QUALITY ASSURANCE
+
+Before declaring any feature complete, test it.
+
+Required tests:
+
+- Database migrations.
+- Authentication.
+- User permissions.
+- Row Level Security.
+- API endpoints.
+- Source collection.
+- Data extraction.
+- Duplicate detection.
+- Exchange rate validation.
+- Expiry detection.
+- Search and filters.
+- Notifications.
+- Admin operations.
+- Mobile responsiveness.
+- Error handling.
+- Production build.
+
+Use unit tests, integration tests, and end-to-end tests where appropriate.
+
+Test against real authorized source responses.
+
+Use synthetic fixtures only inside isolated automated test environments. Never seed synthetic listings into production.
+
+Do not claim that a source is integrated until a real collection and validation test succeeds.
+
+## 18\. IMPLEMENTATION ROADMAP
+
+Implement the upgrade in controlled phases.
+
+PHASE 1:
+
+- Full architecture audit.
+- Database audit.
+- Security audit.
+- Existing module stabilization.
+- Data quality foundation.
+
+PHASE 2:
+
+- Centralized aggregation engine.
+- Source management.
+- Collection scheduler.
+- Data normalization.
+- Deduplication.
+- Source verification.
+- Collection monitoring.
+
+PHASE 3:
+
+- Ethiopian bank exchange rates.
+- National Bank of Ethiopia reference data.
+- Historical exchange-rate records.
+- Exchange-rate dashboard.
+- Bank comparison.
+
+PHASE 4:
+
+- Tender aggregation.
+- Scholarships.
+- Grants and funding.
+- Internship and volunteering.
+
+PHASE 5:
+
+- Business directory.
+- Real estate.
+- Events.
+- Government announcements.
+
+PHASE 6:
+
+- Agriculture.
+- Import/export.
+- Vehicle marketplace.
+- Professional certification.
+
+PHASE 7:
+
+- Universal search.
+- AI-powered recommendations.
+- Notifications.
+- Personalized dashboards.
+
+PHASE 8:
+
+- Digital store improvements.
+- Monetization features.
+- Performance optimization.
+- Security testing.
+- Production deployment.
+
+Do not try to implement everything in one uncontrolled code change.
+
+Complete and test each phase before moving to the next.
+
+## 19\. DEPLOYMENT REQUIREMENTS
+
+Use the existing GitHub and Vercel deployment workflow.
+
+Before production deployment:
+
+- Run database migrations safely.
+- Check environment variables.
+- Verify scheduled jobs.
+- Verify Supabase permissions.
+- Run production builds.
+- Run automated tests.
+- Check error logs.
+- Confirm existing modules still work.
+- Verify that no demo data appears in production.
+
+Never overwrite production secrets.
+
+Never commit API keys.
+
+Never make destructive database changes without an approved migration and backup.
+
+## 20\. DEFINITION OF DONE
+
+The upgrade is only complete when:
+
+1. Existing website functionality is preserved.
+2. New modules are functional, not merely decorative pages.
+3. Real external sources are connected.
+4. Source attribution is available on every aggregated listing.
+5. Exchange rates come from actual bank-published or authoritative sources.
+6. Unavailable sources are clearly identified.
+7. Expired information is handled correctly.
+8. Duplicate detection works.
+9. Automated collection runs reliably.
+10. Failed collections are logged.
+11. Admins can manage sources and verify records.
+12. Users can search and filter real information.
+13. Mobile and desktop interfaces work.
+14. No fake data is displayed as real.
+15. Database permissions are secure.
+16. Production deployment passes all critical tests.
+
+For every module, provide an implementation report showing:
+
+- Features completed.
+- Database changes.
+- External sources integrated.
+- Sources not yet accessible.
+- Tests performed.
+- Known limitations.
+- Outstanding work.
+
+Do not report a feature as complete just because its frontend page has been created.
+
+## FINAL INSTRUCTION
+
+Act as a senior software architect, full-stack engineer, database engineer, data aggregation specialist, and quality assurance engineer.
+
+First inspect my existing project.
+
+Then prepare a detailed implementation plan based on the actual codebase.
+
+After that, implement the upgrade incrementally.
+
+Make the website genuinely functional, data-driven, secure, scalable, and production-ready.
+
+The ultimate goal is to make this platform one of Ethiopia's most trusted destinations for jobs, education, tenders, business opportunities, foreign exchange information, services, and useful public information.
+
+**Accuracy, source transparency, real functionality, and user trust are more important than the number of modules or the amount of displayed data.**
+
+## 3. Three additional instructions I strongly recommend
+
+Before letting your coding agent start, consider these three points.
+
+### A. Don't confuse real-time with daily updates
+
+For Ethiopian bank exchange rates, I recommend:
+
+- Automatically check official bank sources several times daily where permitted.
+- Display the bank's actual published date.
+- Show when your system last collected the rate.
+- Preserve previous rates when a bank hasn't published an update.
+- Never label an old rate as today's rate.
+
+The objective is to collect all available bank rates, not to pretend that every bank publishes a new rate every day.
+
+### B. Build a source coverage dashboard
+
+Your administrators should see something like this:
+
+| Source | Collection status |
+| --- | --- |
+| Bank A | Verified |
+| Bank B | Stale |
+| Bank C | Collection failed |
+| Bank D | Not integrated |
+
+These are illustrative statuses, not actual bank data.
+
+This will help you identify which sources are working and which need attention.
+
+### C. Don't let the AI coding agent change everything at once
+
+My recommended workflow:
+
+1. Connect your GitHub repository.
+2. Create a separate development branch.
+3. Ask the agent to audit the existing website.
+4. Approve its implementation plan.
+5. Implement the aggregation engine first.
+6. Test the foreign exchange module using actual bank sources.
+7. Gradually add the remaining modules.
+8. Test everything before merging into production.
+
+One final strategic recommendation: Make the source aggregation engine your biggest investment. Once it works properly, adding another category—such as insurance, medical services, scholarships, or business opportunities—becomes much easier.
+
+Your competitive advantage should be that people can find reliable Ethiopian information in one place, with proof of where the information came from and when it was last updated.

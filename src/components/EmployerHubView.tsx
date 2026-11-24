@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  ExternalLink,
   FileText,
   Lock,
   PauseCircle,
@@ -12,12 +13,15 @@ import {
   Plus,
   Search,
   ShieldAlert,
+  Sparkles,
   Trash2,
   Upload,
   Users,
   X,
   XCircle,
 } from 'lucide-react';
+import { downloadResumeAsPdf } from '../lib/pdfExport';
+import type { SelfProfileUpdateInput } from '../lib/security';
 import {
   calculateCommercialPricing,
   formatCurrencyEtb,
@@ -27,6 +31,7 @@ import {
   type PaymentSubmissionInput,
 } from '../lib/storeLogic';
 import type {
+  AiApplicantScreeningItem,
   ApplicationStage,
   JobApplication,
   JobListing,
@@ -57,6 +62,11 @@ interface EmployerHubViewProps {
   ) => string | null;
   onDeleteJob: (jobId: string) => void;
   onUpdateApplicationStage: (appId: string, stage: ApplicationStage) => void;
+  onUpdateApplicationDetails?: (
+    appId: string,
+    patch: { humanDecisionOverride?: string; aiMatchScore?: number; aiMatchSummary?: string }
+  ) => void;
+  onUpdateCompanyProfile?: (updates: SelfProfileUpdateInput) => string | null;
   onToggleJobActiveStatus: (jobId: string) => void;
   onDownloadInvoice: (receipt: PaymentReceipt) => void;
   onRequireAuth: (options?: {
@@ -75,11 +85,13 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
   onUpdateJob,
   onDeleteJob,
   onUpdateApplicationStage,
+  onUpdateApplicationDetails,
+  onUpdateCompanyProfile,
   onToggleJobActiveStatus,
   onDownloadInvoice,
   onRequireAuth,
 }) => {
-  const [activeTab, setActiveTab] = useState<'post' | 'listings' | 'candidates'>('post');
+  const [activeTab, setActiveTab] = useState<'post' | 'listings' | 'candidates' | 'company'>('post');
   const [step, setStep] = useState<1 | 2>(1);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -109,9 +121,34 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
   const [receiptNote, setReceiptNote] = useState('');
   const [receiptImageData, setReceiptImageData] = useState<string | undefined>(undefined);
 
-  // Candidate Pipeline Filters
+  // Candidate Pipeline Filters & AI Screening State
   const [candidateSearch, setCandidateSearch] = useState('');
   const [candidateStageFilter, setCandidateStageFilter] = useState<'all' | ApplicationStage>('all');
+  const [listingStatusFilter, setListingStatusFilter] = useState<
+    'all' | 'approved' | 'pending_approval' | 'paused' | 'expired'
+  >('all');
+  const [aiJobId, setAiJobId] = useState<string>('');
+  const [aiScreenings, setAiScreenings] = useState<AiApplicantScreeningItem[]>([]);
+  const [aiComparisonSummary, setAiComparisonSummary] = useState<string>('');
+  const [isScreeningAi, setIsScreeningAi] = useState(false);
+  const [aiScreenError, setAiScreenError] = useState<string | null>(null);
+  const [recruiterQuestion, setRecruiterQuestion] = useState('');
+  const [recruiterAnswer, setRecruiterAnswer] = useState('');
+  const [isAskingAi, setIsAskingAi] = useState(false);
+  const [overrideDrafts, setOverrideDrafts] = useState<Record<string, string>>({});
+
+  // Company Profile State
+  const [compName, setCompName] = useState(currentUser?.companyName || '');
+  const [compTin, setCompTin] = useState(currentUser?.tinNumber || '');
+  const [compPhone, setCompPhone] = useState(currentUser?.phone || '+251911');
+  const [compLocation, setCompLocation] = useState(currentUser?.companyLocation || 'Addis Ababa');
+  const [compWebsite, setCompWebsite] = useState(currentUser?.companyWebsite || '');
+  const [compDescription, setCompDescription] = useState(currentUser?.companyDescription || '');
+  const [compLogo, setCompLogo] = useState<string | undefined>(currentUser?.companyLogoDataUrl);
+  const [compIsAgency, setCompIsAgency] = useState<boolean>(
+    Boolean(currentUser?.isRecruitmentAgency)
+  );
+  const [compSaveMsg, setCompSaveMsg] = useState<{ text: string; isError?: boolean } | null>(null);
 
   // Job Edit / Delete State
   const [editingJob, setEditingJob] = useState<JobListing | null>(null);
@@ -139,6 +176,17 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
         : [],
     [jobs, currentUser]
   );
+
+  const filteredEmployerJobs = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return employerJobs.filter((j) => {
+      if (listingStatusFilter === 'all') return true;
+      if (listingStatusFilter === 'expired') {
+        return Boolean(j.isExpired || (j.deadline && j.deadline < today));
+      }
+      return j.status === listingStatusFilter;
+    });
+  }, [employerJobs, listingStatusFilter]);
 
   const employerCandidates = useMemo(() => {
     const employerJobIds = new Set(employerJobs.map((j) => j.id));
@@ -430,6 +478,19 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
             }`}
           >
             Applicant Pipeline ({employerCandidates.length})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'company'}
+            onClick={() => setActiveTab('company')}
+            className={`rounded-md px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              activeTab === 'company'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Company Profile
           </button>
         </div>
       </div>
@@ -850,22 +911,60 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
 
       {/* Tab 2: Employer Job Listings & Moderation Status */}
       {activeTab === 'listings' && (
-        <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-600">
-              <tr>
-                <th className="px-5 py-3.5">Job Title &amp; Package</th>
-                <th className="px-5 py-3.5">Location &amp; Pay</th>
-                <th className="px-5 py-3.5">Receipt Ref</th>
-                <th className="px-5 py-3.5">Approval Status</th>
-                <th className="px-5 py-3.5">Controls</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {employerJobs.map((job) => {
-                const rcpt = receipts.find((r) => r.id === job.paymentReceiptId);
-                return (
-                  <tr key={job.id} className="hover:bg-slate-50/70">
+        <div className="mt-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="inline-flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1 text-xs font-semibold">
+              {(
+                [
+                  { id: 'all', label: 'All' },
+                  { id: 'approved', label: 'Approved' },
+                  { id: 'pending_approval', label: 'Pending' },
+                  { id: 'paused', label: 'Paused' },
+                  { id: 'expired', label: 'Expired' },
+                ] as const
+              ).map((pill) => (
+                <button
+                  key={pill.id}
+                  type="button"
+                  onClick={() => setListingStatusFilter(pill.id)}
+                  className={`rounded-md px-3 py-1 transition-colors ${
+                    listingStatusFilter === pill.id
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {pill.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-slate-500 tabular-nums">
+              Showing {filteredEmployerJobs.length} of {employerJobs.length} postings
+            </span>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                <tr>
+                  <th className="px-5 py-3.5">Job Title &amp; Package</th>
+                  <th className="px-5 py-3.5">Location &amp; Pay</th>
+                  <th className="px-5 py-3.5">Receipt Ref</th>
+                  <th className="px-5 py-3.5">Approval Status</th>
+                  <th className="px-5 py-3.5">Controls</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredEmployerJobs.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-8 text-center text-xs text-slate-500">
+                      No job postings match the selected status filter.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredEmployerJobs.map((job) => {
+                    const rcpt = receipts.find((r) => r.id === job.paymentReceiptId);
+                    return (
+                      <tr key={job.id} className="hover:bg-slate-50/70">
                     <td className="px-5 py-3.5">
                       <div className="font-semibold text-slate-900">{job.titleEn}</div>
                       <div className="text-xs text-slate-500">
@@ -981,17 +1080,215 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
                         )}
                       </div>
                     </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </tr>
+                  );
+                })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      {/* Tab 3: Candidate Pipeline with Search, Stage Filter & CSV Export */}
+      {/* Tab 3: Candidate Pipeline with AI Recruitment Assistant, Search, Stage Filter & CSV Export */}
       {activeTab === 'candidates' && (
-        <div className="mt-6 space-y-4">
+        <div className="mt-6 space-y-5">
+          {employerJobs.length > 0 && (
+            <section className="rounded-xl border border-[#164081]/20 bg-gradient-to-br from-[#F0F5FF] to-white p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#164081]">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    AI Recruitment Screening Assistant
+                  </div>
+                  <h2 className="mt-1 font-display text-base font-bold text-slate-900">
+                    Evidence-Based Applicant Fit Ranking &amp; Pool Q&amp;A
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-600">
+                    Scores applicants strictly on stated skills, experience, and CV/cover note
+                    alignment. Human hiring managers retain full final review and override authority.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    aria-label="Select job vacancy for AI screening"
+                    value={aiJobId || employerJobs[0]?.id || ''}
+                    onChange={(e) => setAiJobId(e.target.value)}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 focus:border-[#164081] focus:outline-none"
+                  >
+                    {employerJobs.map((j) => (
+                      <option key={j.id} value={j.id}>
+                        {j.titleEn} ({applications.filter((a) => a.jobId === j.id).length} applicants)
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={isScreeningAi}
+                    onClick={async () => {
+                      const targetId = aiJobId || employerJobs[0]?.id;
+                      const targetJob = employerJobs.find((j) => j.id === targetId);
+                      if (!targetJob) return;
+                      setIsScreeningAi(true);
+                      setAiScreenError(null);
+                      try {
+                        const pool = applications.filter((a) => a.jobId === targetJob.id);
+                        const res = await fetch('/api/ai/employer/screen', {
+                          method: 'POST',
+                          headers: { 'content-type': 'application/json' },
+                          body: JSON.stringify({ job: targetJob, applications: pool }),
+                        });
+                        const data = (await res.json()) as {
+                          error?: string;
+                          screenings?: AiApplicantScreeningItem[];
+                          comparisonSummary?: string;
+                        };
+                        if (!res.ok) {
+                          setAiScreenError(data.error || 'AI screening failed.');
+                          return;
+                        }
+                        const items = data.screenings || [];
+                        setAiScreenings(items);
+                        setAiComparisonSummary(data.comparisonSummary || '');
+                        if (onUpdateApplicationDetails) {
+                          for (const s of items) {
+                            onUpdateApplicationDetails(s.applicationId, {
+                              aiMatchScore: s.fitScore,
+                              aiMatchSummary: s.summary,
+                            });
+                          }
+                        }
+                      } catch {
+                        setAiScreenError('Network error reaching AI screening assistant.');
+                      } finally {
+                        setIsScreeningAi(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#164081] px-4 py-2 text-xs font-semibold text-white hover:bg-[#102E61] disabled:opacity-60"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {isScreeningAi ? 'Screening Pool...' : 'Screen & Rank Applicants with AI'}
+                  </button>
+                </div>
+              </div>
+
+              {aiScreenError && (
+                <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                  {aiScreenError}
+                </div>
+              )}
+
+              {aiComparisonSummary && (
+                <div className="mt-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-800">
+                  <strong className="text-[#164081]">AI Pool Comparison: </strong>
+                  {aiComparisonSummary}
+                </div>
+              )}
+
+              {aiScreenings.length > 0 && (
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {aiScreenings.map((item) => (
+                    <div
+                      key={item.applicationId}
+                      className="rounded-lg border border-slate-200 bg-white p-3.5 text-xs"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <span className="font-bold text-slate-900">{item.applicantName}</span>
+                          <span className="ml-2 text-slate-500">{item.applicantEmail}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${
+                              item.category === 'Strong Fit'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : item.category === 'Potential Fit'
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {item.category}
+                          </span>
+                          <span className="font-mono font-bold text-[#164081] tabular-nums">
+                            {item.fitScore}/100
+                          </span>
+                        </div>
+                      </div>
+                      <p className="mt-1.5 text-slate-700">{item.summary}</p>
+                      {item.matchingSkills.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {item.matchingSkills.slice(0, 6).map((skill) => (
+                            <span
+                              key={skill}
+                              className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800"
+                            >
+                              {skill}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {item.missingQualifications.length > 0 && (
+                        <div className="mt-1.5 text-[11px] text-amber-800">
+                          Gaps to probe: {item.missingQualifications.slice(0, 3).join(', ')}
+                        </div>
+                      )}
+                      <div className="mt-1.5 text-[10px] text-slate-500">{item.biasCheckNote}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200/80 pt-3">
+                <input
+                  type="text"
+                  value={recruiterQuestion}
+                  onChange={(e) => setRecruiterQuestion(e.target.value)}
+                  placeholder="Ask AI about this candidate pool (e.g. Who has 3+ years React or IFRS experience?)..."
+                  aria-label="Ask AI about applicant pool"
+                  className="min-w-[240px] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={isAskingAi || !recruiterQuestion.trim()}
+                  onClick={async () => {
+                    const targetId = aiJobId || employerJobs[0]?.id;
+                    const targetJob = employerJobs.find((j) => j.id === targetId) || null;
+                    const pool = targetJob
+                      ? applications.filter((a) => a.jobId === targetJob.id)
+                      : employerCandidates;
+                    setIsAskingAi(true);
+                    try {
+                      const res = await fetch('/api/ai/employer/ask', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({
+                          question: recruiterQuestion.trim(),
+                          job: targetJob,
+                          applications: pool,
+                        }),
+                      });
+                      const data = (await res.json()) as { answer?: string };
+                      setRecruiterAnswer(data.answer || 'No response returned.');
+                    } catch {
+                      setRecruiterAnswer('Unable to query AI assistant right now.');
+                    } finally {
+                      setIsAskingAi(false);
+                    }
+                  }}
+                  className="rounded-lg border border-[#164081] bg-white px-3.5 py-1.5 text-xs font-semibold text-[#164081] hover:bg-[#F0F5FF] disabled:opacity-50"
+                >
+                  {isAskingAi ? 'Analyzing...' : 'Ask AI'}
+                </button>
+              </div>
+              {recruiterAnswer && (
+                <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs text-slate-800">
+                  {recruiterAnswer}
+                </div>
+              )}
+            </section>
+          )}
+
           {employerCandidates.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
               <Users className="mx-auto h-9 w-9 text-slate-400" />
@@ -1030,6 +1327,7 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
                     <option value="Under Review">Under Review</option>
                     <option value="Shortlisted">Shortlisted</option>
                     <option value="Interview">Interview</option>
+                    <option value="Offered">Offered</option>
                     <option value="Hired">Hired</option>
                     <option value="Rejected">Rejected</option>
                   </select>
@@ -1048,10 +1346,10 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-600">
                   <tr>
-                    <th className="px-5 py-3.5">Candidate</th>
-                    <th className="px-5 py-3.5">Vacancy</th>
-                    <th className="px-5 py-3.5">Resume</th>
-                    <th className="px-5 py-3.5">Stage</th>
+                    <th className="px-5 py-3.5">Candidate &amp; Cover Note</th>
+                    <th className="px-5 py-3.5">Vacancy &amp; AI Fit</th>
+                    <th className="px-5 py-3.5">Resume / CV</th>
+                    <th className="px-5 py-3.5">Stage &amp; Recruiter Override</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1062,49 +1360,310 @@ export const EmployerHubView: React.FC<EmployerHubViewProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredCandidates.map((app) => (
-                      <tr key={app.id} className="hover:bg-slate-50/70">
-                        <td className="px-5 py-3.5">
-                          <div className="font-semibold text-slate-900">{app.applicantName}</div>
-                          <div className="text-xs text-slate-500">
-                            {app.applicantEmail} · {app.phone}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5 text-slate-700">{app.jobTitle}</td>
-                        <td className="px-5 py-3.5">
-                          <a
-                            href={app.resumeUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs font-semibold text-[#164081] hover:underline"
-                          >
-                            Open CV Link
-                          </a>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <select
-                            aria-label={`Stage for ${app.applicantName}`}
-                            value={app.status}
-                            onChange={(e) =>
-                              onUpdateApplicationStage(app.id, e.target.value as ApplicationStage)
-                            }
-                            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:border-[#164081] focus:outline-none"
-                          >
-                            <option value="Submitted">Submitted</option>
-                            <option value="Under Review">Under Review</option>
-                            <option value="Shortlisted">Shortlisted</option>
-                            <option value="Interview">Interview</option>
-                            <option value="Hired">Hired</option>
-                            <option value="Rejected">Rejected</option>
-                          </select>
-                        </td>
-                      </tr>
-                    ))
+                    filteredCandidates.map((app) => {
+                      const draftOverride =
+                        overrideDrafts[app.id] ?? app.humanDecisionOverride ?? '';
+                      return (
+                        <tr key={app.id} className="align-top hover:bg-slate-50/70">
+                          <td className="px-5 py-3.5">
+                            <div className="font-semibold text-slate-900">{app.applicantName}</div>
+                            <div className="text-xs text-slate-500">
+                              {app.applicantEmail} · {app.phone} · {app.yearsExperience}
+                            </div>
+                            {app.coverNote && (
+                              <p className="mt-1 max-w-xs text-xs text-slate-600 line-clamp-2">
+                                “{app.coverNote}”
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <div className="font-medium text-slate-800">{app.jobTitle}</div>
+                            {typeof app.aiMatchScore === 'number' && (
+                              <div className="mt-1 inline-flex items-center gap-1 rounded bg-[#F0F5FF] px-2 py-0.5 font-mono text-[11px] font-bold text-[#164081]">
+                                AI Fit: {app.aiMatchScore}/100
+                              </div>
+                            )}
+                            {app.aiMatchSummary && (
+                              <div className="mt-1 max-w-xs text-[11px] text-slate-500 line-clamp-2">
+                                {app.aiMatchSummary}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <div className="flex flex-col items-start gap-1.5">
+                              <a
+                                href={app.resumeUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-xs font-semibold text-[#164081] hover:underline"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                Open CV Link
+                              </a>
+                              {app.resumeText && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    downloadResumeAsPdf(
+                                      app.resumeFileName || `${app.applicantName}-CV`,
+                                      `${app.applicantName} — Application CV (${app.jobTitle})`,
+                                      app.resumeText || ''
+                                    )
+                                  }
+                                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                                >
+                                  <FileText className="h-3 w-3 text-[#0F766E]" />
+                                  {app.resumeFileName ? `PDF (${app.resumeFileName})` : 'Download CV PDF'}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5 space-y-2">
+                            <select
+                              aria-label={`Stage for ${app.applicantName}`}
+                              value={app.status}
+                              onChange={(e) =>
+                                onUpdateApplicationStage(app.id, e.target.value as ApplicationStage)
+                              }
+                              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:border-[#164081] focus:outline-none"
+                            >
+                              <option value="Submitted">Submitted</option>
+                              <option value="Under Review">Under Review</option>
+                              <option value="Shortlisted">Shortlisted</option>
+                              <option value="Interview">Interview</option>
+                              <option value="Offered">Offered</option>
+                              <option value="Hired">Hired</option>
+                              <option value="Rejected">Rejected</option>
+                            </select>
+                            {onUpdateApplicationDetails && (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  value={draftOverride}
+                                  onChange={(e) =>
+                                    setOverrideDrafts((prev) => ({
+                                      ...prev,
+                                      [app.id]: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="Human review note..."
+                                  aria-label={`Human decision note for ${app.applicantName}`}
+                                  className="w-36 rounded border border-slate-200 px-2 py-1 text-[11px] text-slate-800 focus:border-[#164081] focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onUpdateApplicationDetails(app.id, {
+                                      humanDecisionOverride: draftOverride.trim(),
+                                    })
+                                  }
+                                  className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab 4: Employer Organization & Agency Profile */}
+      {activeTab === 'company' && (
+        <div className="mt-6 max-w-3xl rounded-xl border border-slate-200 bg-white p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="font-display text-lg font-bold text-slate-900">
+                Company &amp; Recruitment Agency Profile
+              </h2>
+              <p className="text-xs text-slate-600">
+                Keep your Ethiopian organization details, logo, and public career profile up to date.
+              </p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Admin Verification: {currentUser.status.toUpperCase()}
+            </span>
+          </div>
+
+          {compSaveMsg && (
+            <div
+              role="alert"
+              className={`mt-4 rounded-lg border px-4 py-2.5 text-xs font-medium ${
+                compSaveMsg.isError
+                  ? 'border-rose-200 bg-rose-50 text-rose-800'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              }`}
+            >
+              {compSaveMsg.text}
+            </div>
+          )}
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setCompSaveMsg(null);
+              if (!onUpdateCompanyProfile) return;
+              const err = onUpdateCompanyProfile({
+                fullName: currentUser.fullName,
+                phone: compPhone.trim(),
+                companyName: compName.trim(),
+                tinNumber: compTin.trim(),
+                companyLocation: compLocation.trim(),
+                companyWebsite: compWebsite.trim() || undefined,
+                companyDescription: compDescription.trim(),
+                companyLogoDataUrl: compLogo,
+                isRecruitmentAgency: compIsAgency,
+              });
+              if (err) {
+                setCompSaveMsg({ text: err, isError: true });
+              } else {
+                setCompSaveMsg({ text: 'Company profile saved and synchronized.' });
+              }
+            }}
+            className="mt-5 space-y-4"
+          >
+            <div className="flex flex-wrap items-center gap-4">
+              {compLogo ? (
+                <img
+                  src={compLogo}
+                  alt={compName || 'Company Logo'}
+                  className="h-16 w-16 rounded-xl border border-slate-200 object-cover"
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-400">
+                  <Building2 className="h-7 w-7" />
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                    <Upload className="h-3.5 w-3.5 text-[#164081]" />
+                    Upload Logo (&lt; 2 MB)
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        if (file.size > 2 * 1024 * 1024) {
+                          setCompSaveMsg({ text: 'Logo image must be under 2 MB.', isError: true });
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          if (typeof reader.result === 'string') setCompLogo(reader.result);
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+                  {compLogo && (
+                    <button
+                      type="button"
+                      onClick={() => setCompLogo(undefined)}
+                      className="text-xs font-semibold text-rose-700 hover:underline"
+                    >
+                      Remove Logo
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500">PNG, JPG, or SVG recommended.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label className="block text-xs font-semibold text-slate-700">
+                Company / Organization Name *
+                <input
+                  type="text"
+                  required
+                  value={compName}
+                  onChange={(e) => setCompName(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Business TIN / License *
+                <input
+                  type="text"
+                  required
+                  value={compTin}
+                  onChange={(e) => setCompTin(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Primary Phone *
+                <input
+                  type="text"
+                  required
+                  value={compPhone}
+                  onChange={(e) => setCompPhone(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Headquarters / City
+                <input
+                  type="text"
+                  value={compLocation}
+                  onChange={(e) => setCompLocation(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+                />
+              </label>
+            </div>
+
+            <label className="block text-xs font-semibold text-slate-700">
+              Company Website
+              <input
+                type="url"
+                value={compWebsite}
+                onChange={(e) => setCompWebsite(e.target.value)}
+                placeholder="https://company.et"
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+              />
+            </label>
+
+            <label className="block text-xs font-semibold text-slate-700">
+              Organization Overview &amp; Culture
+              <textarea
+                rows={4}
+                value={compDescription}
+                onChange={(e) => setCompDescription(e.target.value)}
+                placeholder="Describe your sector, hiring priorities, and workplace culture..."
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#164081] focus:outline-none"
+              />
+            </label>
+
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={compIsAgency}
+                onChange={(e) => setCompIsAgency(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-[#164081]"
+              />
+              Operating as a licensed Recruitment / Staffing Agency
+            </label>
+
+            <div className="flex justify-end border-t border-slate-100 pt-4">
+              <button
+                type="submit"
+                className="rounded-lg bg-[#164081] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#102E61]"
+              >
+                Save Company Profile
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
